@@ -1,0 +1,237 @@
+// Real-Time Football Social Aggregator — database schema
+// See README.md for the full data-flow / architecture write-up.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Users & favorites
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  favoriteTeams UserFavoriteTeam[]
+
+  @@map("users")
+}
+
+model UserFavoriteTeam {
+  userId    String
+  teamId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([userId, teamId])
+  @@index([teamId])
+  @@map("user_favorite_teams")
+}
+
+// ---------------------------------------------------------------------------
+// Leagues & teams
+// ---------------------------------------------------------------------------
+
+model League {
+  id         String   @id @default(cuid())
+  externalId String   @unique
+  name       String
+  country    String?
+  logoUrl    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  teams   Team[]
+  matches Match[]
+
+  @@map("leagues")
+}
+
+model Team {
+  id         String   @id @default(cuid())
+  externalId String   @unique
+  name       String
+  shortName  String?
+  logoUrl    String?
+  leagueId   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  league League? @relation(fields: [leagueId], references: [id])
+
+  favoritedBy UserFavoriteTeam[]
+  homeMatches Match[]            @relation("HomeTeam")
+  awayMatches Match[]            @relation("AwayTeam")
+  events      MatchEvent[]
+
+  @@index([leagueId])
+  @@index([name])
+  @@map("teams")
+}
+
+// ---------------------------------------------------------------------------
+// Matches & events
+// ---------------------------------------------------------------------------
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  PAUSED
+  FINISHED
+  POSTPONED
+  CANCELLED
+}
+
+model Match {
+  id           String      @id @default(cuid())
+  externalId   String      @unique
+  leagueId     String
+  homeTeamId   String
+  awayTeamId   String
+  status       MatchStatus @default(SCHEDULED)
+  homeScore    Int?
+  awayScore    Int?
+  minute       Int?
+  kickoffAt    DateTime
+  venue        String?
+  lastSyncedAt DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  league   League @relation(fields: [leagueId], references: [id])
+  homeTeam Team   @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam Team   @relation("AwayTeam", fields: [awayTeamId], references: [id])
+
+  events      MatchEvent[]
+  socialPosts SocialPost[]
+
+  @@index([leagueId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([status])
+  @@index([kickoffAt])
+  @@map("matches")
+}
+
+enum MatchEventType {
+  GOAL
+  OWN_GOAL
+  PENALTY_GOAL
+  PENALTY_MISSED
+  YELLOW_CARD
+  RED_CARD
+  SECOND_YELLOW_CARD
+  SUBSTITUTION
+  VAR_DECISION
+  KICKOFF
+  HALFTIME
+  FULLTIME
+  OTHER
+}
+
+enum CommentarySource {
+  SPORTS_API
+  FOTMOB
+  GENERATED
+}
+
+model MatchEvent {
+  id             String         @id @default(cuid())
+  externalId     String
+  matchId        String
+  type           MatchEventType
+  detail         String?
+  minute         Int
+  extraMinute    Int?
+  teamId         String?
+  playerId       String?
+  playerName     String?
+  assistName     String?
+  timestamp      DateTime       @default(now())
+
+  commentary          String?
+  commentarySource    CommentarySource?
+  commentaryFetchedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team  Team? @relation(fields: [teamId], references: [id])
+
+  socialMatches EventSocialMatch[]
+
+  @@unique([matchId, externalId])
+  @@index([matchId])
+  @@index([type])
+  @@map("match_events")
+}
+
+// ---------------------------------------------------------------------------
+// Social ingestion & matching
+// ---------------------------------------------------------------------------
+
+enum SocialSource {
+  REDDIT
+  SEED
+}
+
+model SocialPost {
+  id         String       @id @default(cuid())
+  source     SocialSource
+  externalId String
+  matchId    String?
+  title      String
+  body       String?
+  author     String?
+  url        String
+  mediaUrl   String?
+  createdAt  DateTime
+  fetchedAt  DateTime     @default(now())
+
+  match         Match?             @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  eventMatches  EventSocialMatch[]
+
+  @@unique([source, externalId])
+  @@index([matchId])
+  @@map("social_posts")
+}
+
+enum MatchingMethod {
+  DETERMINISTIC
+  FUZZY
+  SEMANTIC
+}
+
+model EventSocialMatch {
+  id             String         @id @default(cuid())
+  eventId        String
+  socialPostId   String
+  score          Float
+  matchingMethod MatchingMethod
+  playerScore    Float?
+  teamScore      Float?
+  timeScore      Float?
+  eventTypeScore Float?
+  semanticScore  Float?
+  createdAt      DateTime       @default(now())
+
+  event      MatchEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  socialPost SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, socialPostId])
+  @@index([eventId])
+  @@index([socialPostId])
+  @@map("event_social_matches")
+}
