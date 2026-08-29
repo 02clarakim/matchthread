@@ -1,4 +1,4 @@
-import type { MatchEventType, MatchStatus, MatchingMethod } from "@prisma/client";
+import type { MatchEventType, MatchStatus, MatchingMethod, SocialMediaType } from "@prisma/client";
 
 /**
  * JSON-safe shapes returned by our own API routes (Dates arrive as ISO
@@ -54,6 +54,7 @@ export interface ApiHighlight {
     title: string;
     url: string;
     mediaUrl: string | null;
+    mediaType: SocialMediaType | null;
     author: string | null;
   };
   event: { id: string };

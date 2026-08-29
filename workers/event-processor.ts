@@ -102,6 +102,7 @@ export async function processEventMatching(eventId: string): Promise<void> {
           title: post.title,
           url: post.url,
           mediaUrl: post.mediaUrl,
+          mediaType: post.mediaType,
           author: post.author,
           score: top.score,
           matchingMethod: top.matchingMethod,

@@ -21,6 +21,8 @@ export const TEAM_ALIASES: Record<string, string[]> = {
   "Bayern Munich": ["Bayern Munich", "Bayern", "FCB", "Munich"],
   "Newcastle United": ["Newcastle United", "Newcastle", "Magpies", "NEW"],
   "Aston Villa": ["Aston Villa", "Villa", "AVL"],
+  Sevilla: ["Sevilla", "SEV"],
+  "Borussia Dortmund": ["Borussia Dortmund", "Dortmund", "BVB"],
 };
 
 export function aliasesFor(teamName: string): string[] {

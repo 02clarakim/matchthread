@@ -41,6 +41,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
       title: h.socialPost.title,
       url: h.socialPost.url,
       mediaUrl: h.socialPost.mediaUrl,
+      mediaType: h.socialPost.mediaType,
       author: h.socialPost.author,
     },
     event: { id: h.eventId },

@@ -60,6 +60,7 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
             title: message.highlight.title,
             url: message.highlight.url,
             mediaUrl: message.highlight.mediaUrl,
+            mediaType: message.highlight.mediaType,
             author: message.highlight.author,
           },
           event: { id: message.eventId },

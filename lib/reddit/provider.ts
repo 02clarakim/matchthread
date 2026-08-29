@@ -18,6 +18,41 @@ const EVENT_TYPE_WORDS: Partial<Record<SocialSearchEvent["eventType"], string>> 
 
 const INVALID_THUMBNAILS = new Set(["self", "default", "nsfw", "spoiler", "image", ""]);
 
+/** Reddit's JSON API HTML-escapes URLs (e.g. `&amp;` for `&`) — undo that before use. */
+function unescapeUrl(url: string): string {
+  return url.replace(/&amp;/g, "&");
+}
+
+/**
+ * Extracts a directly embeddable media URL straight from Reddit's own CDN
+ * (v.redd.it / preview.redd.it) — never downloaded or re-hosted by us, the
+ * same as hotlinking any other embed. Falls back through native video →
+ * full-size preview image → direct image link → low-res thumbnail → none,
+ * in that order of embed quality.
+ */
+export function extractMedia(post: RedditPost): { mediaUrl: string | null; mediaType: "IMAGE" | "VIDEO" | null } {
+  const videoUrl = post.media?.reddit_video?.fallback_url;
+  if (post.is_video && videoUrl) {
+    return { mediaUrl: unescapeUrl(videoUrl), mediaType: "VIDEO" };
+  }
+
+  const previewImage = post.preview?.images?.[0]?.source?.url;
+  if (previewImage) {
+    return { mediaUrl: unescapeUrl(previewImage), mediaType: "IMAGE" };
+  }
+
+  if (post.post_hint === "image" && post.url_overridden_by_dest) {
+    return { mediaUrl: post.url_overridden_by_dest, mediaType: "IMAGE" };
+  }
+
+  const thumbnail = post.thumbnail && !INVALID_THUMBNAILS.has(post.thumbnail) ? post.thumbnail : null;
+  if (thumbnail) {
+    return { mediaUrl: thumbnail, mediaType: "IMAGE" };
+  }
+
+  return { mediaUrl: null, mediaType: null };
+}
+
 function buildQueries(event: SocialSearchEvent): string[] {
   const homeAlias = aliasesFor(event.homeTeamName)[0];
   const awayAlias = aliasesFor(event.awayTeamName)[0];
@@ -38,14 +73,15 @@ function buildQueries(event: SocialSearchEvent): string[] {
 }
 
 function toCandidate(post: RedditPost): SocialCandidate {
-  const thumbnail = post.thumbnail && !INVALID_THUMBNAILS.has(post.thumbnail) ? post.thumbnail : null;
+  const { mediaUrl, mediaType } = extractMedia(post);
   return {
     externalId: post.id,
     title: post.title,
     body: post.selftext || null,
     author: post.author,
     url: `https://www.reddit.com${post.permalink}`,
-    mediaUrl: thumbnail,
+    mediaUrl,
+    mediaType,
     createdAt: new Date(post.created_utc * 1000),
   };
 }

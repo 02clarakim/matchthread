@@ -20,6 +20,7 @@ import { logger } from "../lib/logger";
 
 const PL = { externalId: "seed-league-pl", name: "Premier League", country: "England", logoUrl: null };
 const LALIGA = { externalId: "seed-league-laliga", name: "La Liga", country: "Spain", logoUrl: null };
+const BUNDESLIGA = { externalId: "seed-league-bundesliga", name: "Bundesliga", country: "Germany", logoUrl: null };
 
 function team(externalId: string, name: string, shortName: string) {
   return { externalId, name, shortName, logoUrl: null };
@@ -32,12 +33,48 @@ const TEAMS = {
   manCity: team("seed-team-man-city", "Manchester City", "MCI"),
   manUtd: team("seed-team-man-utd", "Manchester United", "MUN"),
   newcastle: team("seed-team-newcastle", "Newcastle United", "NEW"),
+  tottenham: team("seed-team-tottenham", "Tottenham Hotspur", "TOT"),
+  astonVilla: team("seed-team-aston-villa", "Aston Villa", "AVL"),
   barcelona: team("seed-team-barcelona", "Barcelona", "FCB"),
   realMadrid: team("seed-team-real-madrid", "Real Madrid", "RMA"),
+  atleticoMadrid: team("seed-team-atletico-madrid", "Atletico Madrid", "ATM"),
+  sevilla: team("seed-team-sevilla", "Sevilla", "SEV"),
+  bayernMunich: team("seed-team-bayern-munich", "Bayern Munich", "BAY"),
+  dortmund: team("seed-team-dortmund", "Borussia Dortmund", "BVB"),
 };
 
 function minutesAgo(minutes: number): Date {
   return new Date(Date.now() - minutes * 60 * 1000);
+}
+
+/**
+ * Resolves "tomorrow at HH:MM in a given IANA time zone" to a real UTC
+ * Date, using Intl to derive the correct offset for that date (handles DST
+ * automatically — a fixed UTC-7/UTC-8 offset would be wrong half the year).
+ */
+function tomorrowAtLocalTime(hour: number, minute: number, timeZone: string): Date {
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  const dateParts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(tomorrow);
+  const year = Number(dateParts.find((p) => p.type === "year")!.value);
+  const month = Number(dateParts.find((p) => p.type === "month")!.value);
+  const day = Number(dateParts.find((p) => p.type === "day")!.value);
+
+  const offsetParts = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(
+    tomorrow
+  );
+  const offsetLabel = offsetParts.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  const offsetMatch = offsetLabel.match(/GMT([+-]\d+)(?::(\d+))?/);
+  const offsetHours = offsetMatch ? Number(offsetMatch[1]) : 0;
+  const offsetMinutes = offsetMatch?.[2] ? Number(offsetMatch[2]) : 0;
+  const totalOffsetMinutes = offsetHours * 60 + Math.sign(offsetHours || 1) * offsetMinutes;
+
+  return new Date(Date.UTC(year, month - 1, day, hour, minute) - totalOffsetMinutes * 60_000);
 }
 
 async function seedMatch(normalized: NormalizedMatch, events: NormalizedEvent[]) {
@@ -62,8 +99,8 @@ async function seedArsenalVsChelsea() {
       status: "LIVE",
       homeScore: 1,
       awayScore: 0,
-      minute: 67,
-      kickoffAt: minutesAgo(67),
+      minute: 74,
+      kickoffAt: minutesAgo(74),
       venue: "Emirates Stadium",
     },
     [
@@ -77,7 +114,7 @@ async function seedArsenalVsChelsea() {
         playerId: null,
         playerName: "Enzo Fernández",
         assistName: null,
-        timestamp: minutesAgo(44),
+        timestamp: minutesAgo(51),
       },
       {
         externalId: "seed-event-ars-che-goal-1",
@@ -89,7 +126,7 @@ async function seedArsenalVsChelsea() {
         playerId: null,
         playerName: "Bukayo Saka",
         assistName: "Martin Ødegaard",
-        timestamp: minutesAgo(0),
+        timestamp: minutesAgo(7),
       },
       {
         externalId: "seed-event-ars-che-sub-1",
@@ -101,7 +138,7 @@ async function seedArsenalVsChelsea() {
         playerId: null,
         playerName: "Gabriel Martinelli",
         assistName: "Leandro Trossard",
-        timestamp: minutesAgo(-7),
+        timestamp: minutesAgo(0),
       },
     ]
   );
@@ -121,7 +158,7 @@ async function seedArsenalVsChelsea() {
       author: "gooner_since_04",
       url: "https://www.reddit.com/r/soccer/comments/seed-post-1",
       mediaUrl: null,
-      createdAt: minutesAgo(0),
+      createdAt: minutesAgo(7),
     },
     {
       externalId: "seed-post-2",
@@ -130,7 +167,7 @@ async function seedArsenalVsChelsea() {
       author: "afc_ollie",
       url: "https://www.reddit.com/r/soccer/comments/seed-post-2",
       mediaUrl: null,
-      createdAt: minutesAgo(-1),
+      createdAt: minutesAgo(6),
     },
     {
       externalId: "seed-post-3",
@@ -139,7 +176,7 @@ async function seedArsenalVsChelsea() {
       author: "cfc_dan",
       url: "https://www.reddit.com/r/soccer/comments/seed-post-3",
       mediaUrl: null,
-      createdAt: minutesAgo(-2),
+      createdAt: minutesAgo(5),
     },
     {
       externalId: "seed-post-4",
@@ -266,6 +303,104 @@ async function seedBarcelonaVsRealMadrid() {
   });
 }
 
+async function seedTottenhamVsAstonVilla() {
+  await upsertMatch({
+    externalId: "seed-match-tottenham-aston-villa",
+    league: PL,
+    homeTeam: TEAMS.tottenham,
+    awayTeam: TEAMS.astonVilla,
+    status: "SCHEDULED",
+    homeScore: null,
+    awayScore: null,
+    minute: null,
+    kickoffAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    venue: "Tottenham Hotspur Stadium",
+  });
+}
+
+/** The specific fixture requested for a live test run: kicks off tomorrow at 12:30pm Pacific. */
+async function seedAtleticoMadridVsSevilla() {
+  await upsertMatch({
+    externalId: "seed-match-atletico-sevilla",
+    league: LALIGA,
+    homeTeam: TEAMS.atleticoMadrid,
+    awayTeam: TEAMS.sevilla,
+    status: "SCHEDULED",
+    homeScore: null,
+    awayScore: null,
+    minute: null,
+    kickoffAt: tomorrowAtLocalTime(12, 30, "America/Los_Angeles"),
+    venue: "Estadio Metropolitano",
+  });
+}
+
+async function seedBayernVsDortmund() {
+  await seedMatch(
+    {
+      externalId: "seed-match-bayern-dortmund",
+      league: BUNDESLIGA,
+      homeTeam: TEAMS.bayernMunich,
+      awayTeam: TEAMS.dortmund,
+      status: "FINISHED",
+      homeScore: 3,
+      awayScore: 1,
+      minute: 90,
+      kickoffAt: minutesAgo(2 * 24 * 60),
+      venue: "Allianz Arena",
+    },
+    [
+      {
+        externalId: "seed-event-bay-bvb-goal-1",
+        type: "GOAL",
+        detail: null,
+        minute: 18,
+        extraMinute: null,
+        teamExternalId: TEAMS.bayernMunich.externalId,
+        playerId: null,
+        playerName: "Harry Kane",
+        assistName: null,
+        timestamp: minutesAgo(2 * 24 * 60 - 18),
+      },
+      {
+        externalId: "seed-event-bay-bvb-goal-2",
+        type: "GOAL",
+        detail: null,
+        minute: 44,
+        extraMinute: null,
+        teamExternalId: TEAMS.dortmund.externalId,
+        playerId: null,
+        playerName: "Karim Adeyemi",
+        assistName: null,
+        timestamp: minutesAgo(2 * 24 * 60 - 44),
+      },
+      {
+        externalId: "seed-event-bay-bvb-goal-3",
+        type: "GOAL",
+        detail: null,
+        minute: 71,
+        extraMinute: null,
+        teamExternalId: TEAMS.bayernMunich.externalId,
+        playerId: null,
+        playerName: "Jamal Musiala",
+        assistName: "Harry Kane",
+        timestamp: minutesAgo(2 * 24 * 60 - 71),
+      },
+      {
+        externalId: "seed-event-bay-bvb-goal-4",
+        type: "GOAL",
+        detail: null,
+        minute: 85,
+        extraMinute: null,
+        teamExternalId: TEAMS.bayernMunich.externalId,
+        playerId: null,
+        playerName: "Leroy Sané",
+        assistName: null,
+        timestamp: minutesAgo(2 * 24 * 60 - 85),
+      },
+    ]
+  );
+}
+
 async function seedUsers() {
   const passwordHash = await bcrypt.hash("password123", 10);
 
@@ -322,6 +457,9 @@ async function main() {
   await seedManCityVsNewcastle();
   await seedLiverpoolVsManUtd();
   await seedBarcelonaVsRealMadrid();
+  await seedTottenhamVsAstonVilla();
+  await seedAtleticoMadridVsSevilla();
+  await seedBayernVsDortmund();
   await seedUsers();
 
   logger.info("seed_completed", {});

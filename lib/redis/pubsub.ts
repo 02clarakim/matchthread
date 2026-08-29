@@ -1,7 +1,7 @@
 import { redisPublisher, createSubscriberClient } from "./client";
 import { REALTIME_CHANNEL } from "./keys";
 import { logger } from "../logger";
-import type { MatchEventType, MatchStatus, MatchingMethod } from "@prisma/client";
+import type { MatchEventType, MatchStatus, MatchingMethod, SocialMediaType } from "@prisma/client";
 
 /**
  * Discriminated union of everything that can flow from workers to the
@@ -45,6 +45,7 @@ export type RealtimeMessage =
         title: string;
         url: string;
         mediaUrl: string | null;
+        mediaType: SocialMediaType | null;
         author: string | null;
         score: number;
         matchingMethod: MatchingMethod;

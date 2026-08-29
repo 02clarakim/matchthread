@@ -76,6 +76,11 @@ export interface RedditPost {
   thumbnail: string;
   created_utc: number;
   score: number;
+  post_hint?: string;
+  is_video?: boolean;
+  url_overridden_by_dest?: string;
+  media?: { reddit_video?: { fallback_url?: string } } | null;
+  preview?: { images?: Array<{ source?: { url?: string } }> };
 }
 
 /** Searches a subreddit for a query string. Returns [] on any failure/rate-limit — search is best-effort. */

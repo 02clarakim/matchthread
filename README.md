@@ -350,11 +350,20 @@ Optional, for a live (non-demo) match feed:
 npm run worker:sports-poller   # requires SPORTS_API_KEY
 ```
 
+> **football-data.org free-tier limitations, confirmed against their current pricing/coverage
+> pages (not assumed):** the free tier explicitly returns **delayed** scores, not live —
+> real-time/in-play data requires a paid "Livescores" add-on. Free-tier competition coverage
+> is inconsistent between their own marketing copy and pricing table for some leagues (Premier
+> League and Bundesliga are reliably free; La Liga's free-tier status is ambiguous — confirm on
+> your account after registering). None of this blocks the demo experience above, which never
+> depends on a live key — see [Demo Mode](#demo-mode).
+
 Other commands:
 
 ```bash
-npm run simulate-event                 # fire a new goal through the real pipeline
-npm run simulate-event -- --type=red   # or: yellow, var, sub
+npm run simulate-event                                    # fire a new goal through the real pipeline
+npm run simulate-event -- --type=red                      # or: yellow, var, sub
+npm run simulate-event -- --match=<matchExternalId>        # target any seeded match, not just the default
 npm run simulate-event -- --replay     # re-send the last event — proves idempotency
 npm test                                # unit + integration + API tests
 npm run db:studio                       # Prisma Studio, browse the DB

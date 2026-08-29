@@ -16,12 +16,14 @@ import type { NormalizedEvent } from "../lib/sports/types";
  * live, no refresh needed.
  *
  * Usage:
- *   npm run simulate-event                 goal for Arsenal vs Chelsea (default)
- *   npm run simulate-event -- --type=red    a red card instead
- *   npm run simulate-event -- --type=var    a VAR decision
- *   npm run simulate-event -- --replay      re-sends the last simulated event's
- *                                           exact externalId, to demonstrate
- *                                           that duplicate ingestion is a no-op
+ *   npm run simulate-event                              goal for Arsenal vs Chelsea (default)
+ *   npm run simulate-event -- --type=red                 a red card instead
+ *   npm run simulate-event -- --type=var                 a VAR decision
+ *   npm run simulate-event -- --match=seed-match-atletico-sevilla
+ *                                                         target any seeded match by externalId
+ *   npm run simulate-event -- --replay                   re-sends the last simulated event's
+ *                                                         exact externalId, to demonstrate
+ *                                                         that duplicate ingestion is a no-op
  */
 
 const DEFAULT_MATCH_EXTERNAL_ID = "seed-match-arsenal-chelsea";
@@ -36,43 +38,69 @@ interface Scenario {
   scoreDelta: { home: number; away: number };
 }
 
-const HOME_SCENARIOS: Record<ScenarioType, Scenario> = {
-  goal: {
-    type: "GOAL",
-    detail: null,
-    playerName: "Kai Havertz",
-    assistName: "Declan Rice",
-    scoreDelta: { home: 1, away: 0 },
-  },
-  yellow: {
-    type: "YELLOW_CARD",
-    detail: "Foul",
-    playerName: "Declan Rice",
-    assistName: null,
-    scoreDelta: { home: 0, away: 0 },
-  },
-  red: {
-    type: "RED_CARD",
-    detail: "Serious foul play",
-    playerName: "William Saliba",
-    assistName: null,
-    scoreDelta: { home: 0, away: 0 },
-  },
-  var: {
-    type: "VAR_DECISION",
-    detail: "Goal disallowed for offside",
-    playerName: "Kai Havertz",
-    assistName: null,
-    scoreDelta: { home: 0, away: 0 },
-  },
-  sub: {
-    type: "SUBSTITUTION",
-    detail: null,
-    playerName: "Raheem Sterling",
-    assistName: "Kai Havertz",
-    scoreDelta: { home: 0, away: 0 },
-  },
+/**
+ * A small pool of plausible player names per seeded team, so a simulated
+ * event on any match (not just the default Arsenal vs Chelsea one) reads
+ * as realistic rather than showing an Arsenal player scoring for Sevilla.
+ * Purely illustrative — see README § Demo Mode.
+ */
+const TEAM_ROSTERS: Record<string, string[]> = {
+  "seed-team-arsenal": ["Kai Havertz", "Declan Rice", "William Saliba"],
+  "seed-team-chelsea": ["Cole Palmer", "Enzo Fernández", "Moisés Caicedo"],
+  "seed-team-liverpool": ["Mohamed Salah", "Darwin Núñez", "Virgil van Dijk"],
+  "seed-team-man-city": ["Erling Haaland", "Kevin De Bruyne", "Phil Foden"],
+  "seed-team-man-utd": ["Bruno Fernandes", "Marcus Rashford", "Rasmus Højlund"],
+  "seed-team-newcastle": ["Alexander Isak", "Anthony Gordon", "Bruno Guimarães"],
+  "seed-team-tottenham": ["Son Heung-min", "James Maddison", "Dejan Kulusevski"],
+  "seed-team-aston-villa": ["Ollie Watkins", "Morgan Rogers", "Youri Tielemans"],
+  "seed-team-barcelona": ["Robert Lewandowski", "Pedri", "Raphinha"],
+  "seed-team-real-madrid": ["Jude Bellingham", "Vinícius Júnior", "Rodrygo"],
+  "seed-team-atletico-madrid": ["Antoine Griezmann", "Julián Álvarez", "Rodrigo De Paul"],
+  "seed-team-sevilla": ["Isaac Romero", "Dodi Lukébakio", "Saúl Ñíguez"],
+  "seed-team-bayern-munich": ["Harry Kane", "Jamal Musiala", "Leroy Sané"],
+  "seed-team-dortmund": ["Karim Adeyemi", "Julian Brandt", "Serhou Guirassy"],
 };
+
+const GENERIC_ROSTER = ["Home Player", "Home Teammate", "Home Defender"];
+
+function rosterFor(teamExternalId: string): string[] {
+  return TEAM_ROSTERS[teamExternalId] ?? GENERIC_ROSTER;
+}
+
+function buildScenario(type: ScenarioType, homeTeamExternalId: string): Scenario {
+  const [scorer, assist, thirdPlayer] = rosterFor(homeTeamExternalId);
+
+  switch (type) {
+    case "goal":
+      return { type: "GOAL", detail: null, playerName: scorer, assistName: assist, scoreDelta: { home: 1, away: 0 } };
+    case "yellow":
+      return { type: "YELLOW_CARD", detail: "Foul", playerName: assist, assistName: null, scoreDelta: { home: 0, away: 0 } };
+    case "red":
+      return {
+        type: "RED_CARD",
+        detail: "Serious foul play",
+        playerName: thirdPlayer,
+        assistName: null,
+        scoreDelta: { home: 0, away: 0 },
+      };
+    case "var":
+      return {
+        type: "VAR_DECISION",
+        detail: "Goal disallowed for offside",
+        playerName: scorer,
+        assistName: null,
+        scoreDelta: { home: 0, away: 0 },
+      };
+    case "sub":
+      return {
+        type: "SUBSTITUTION",
+        detail: null,
+        playerName: thirdPlayer,
+        assistName: scorer,
+        scoreDelta: { home: 0, away: 0 },
+      };
+  }
+}
 
 // A couple of Reddit-style candidate posts, keyed by scenario, so a fresh
 // event also gets a fresh community highlight — same seeded-data approach
@@ -104,8 +132,9 @@ function buildCandidatePosts(scenario: Scenario, minute: number, opponentName: s
 function parseArgs() {
   const args = process.argv.slice(2);
   const typeArg = args.find((a) => a.startsWith("--type="))?.split("=")[1] as ScenarioType | undefined;
+  const matchArg = args.find((a) => a.startsWith("--match="))?.split("=")[1];
   const replay = args.includes("--replay");
-  return { type: typeArg ?? "goal", replay };
+  return { type: typeArg ?? "goal", match: matchArg ?? DEFAULT_MATCH_EXTERNAL_ID, replay };
 }
 
 async function runReplay(matchExternalId: string) {
@@ -146,21 +175,26 @@ async function runReplay(matchExternalId: string) {
 async function runNewEvent(matchExternalId: string, scenarioType: ScenarioType) {
   const match = await prisma.match.findUnique({
     where: { externalId: matchExternalId },
-    include: { homeTeam: true, awayTeam: true },
+    include: { homeTeam: true, awayTeam: true, league: true },
   });
 
   if (!match) {
-    console.error(`Match "${matchExternalId}" not found — run "npm run seed" first.`);
+    console.error(`Match "${matchExternalId}" not found — run "npm run seed" first, or check the externalId.`);
     process.exitCode = 1;
     return;
   }
 
-  const scenario = HOME_SCENARIOS[scenarioType];
+  const scenario = buildScenario(scenarioType, match.homeTeam.externalId);
   const minute = Math.min(90, (match.minute ?? 60) + Math.floor(Math.random() * 5) + 1);
 
   const updatedMatch = await upsertMatch({
     externalId: match.externalId,
-    league: { externalId: "seed-league-pl", name: "Premier League", country: "England", logoUrl: null },
+    league: {
+      externalId: match.league.externalId,
+      name: match.league.name,
+      country: match.league.country,
+      logoUrl: match.league.logoUrl,
+    },
     homeTeam: {
       externalId: match.homeTeam.externalId,
       name: match.homeTeam.name,
@@ -219,11 +253,11 @@ async function runNewEvent(matchExternalId: string, scenarioType: ScenarioType) 
 }
 
 async function main() {
-  const { type, replay } = parseArgs();
+  const { type, match, replay } = parseArgs();
   if (replay) {
-    await runReplay(DEFAULT_MATCH_EXTERNAL_ID);
+    await runReplay(match);
   } else {
-    await runNewEvent(DEFAULT_MATCH_EXTERNAL_ID, type);
+    await runNewEvent(match, type);
   }
 }
 

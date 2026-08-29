@@ -1,4 +1,4 @@
-import type { MatchEventType } from "@prisma/client";
+import type { MatchEventType, SocialMediaType } from "@prisma/client";
 
 /** A raw candidate post from a social source, before matching. */
 export interface SocialCandidate {
@@ -7,7 +7,14 @@ export interface SocialCandidate {
   body?: string | null;
   author?: string | null;
   url: string;
+  /**
+   * A directly playable/displayable media URL, if the source legitimately
+   * offers one (e.g. Reddit's own v.redd.it video CDN, or a preview image
+   * URL) — never a re-hosted copy. Null when no embeddable media exists;
+   * the UI falls back to a link to the source post.
+   */
   mediaUrl?: string | null;
+  mediaType?: SocialMediaType | null;
   createdAt: Date;
 }
 

@@ -67,6 +67,7 @@ export async function ingestSocialForEvent(eventId: string): Promise<void> {
         author: candidate.author,
         url: candidate.url,
         mediaUrl: candidate.mediaUrl,
+        mediaType: candidate.mediaType,
         createdAt: candidate.createdAt,
       },
       // A post can plausibly resurface across searches for the same match;
