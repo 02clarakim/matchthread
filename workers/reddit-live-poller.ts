@@ -3,9 +3,16 @@ import { prisma } from "../lib/db/prisma";
 import { logger } from "../lib/logger";
 import { isRedditConfigured } from "../lib/reddit/client";
 import { findGoalClipPosts, findRedCardPosts } from "../lib/reddit/live-detector";
-import { extractMinute, extractPlayerName, detectScoringSide, type KnownScore } from "../lib/reddit/parse-goal-post";
+import {
+  extractMinute,
+  extractPlayerName,
+  detectScoringSide,
+  resolveGoalEvent,
+  type KnownScore,
+} from "../lib/reddit/parse-goal-post";
 import { extractMedia } from "../lib/reddit/provider";
 import type { RedditPost } from "../lib/reddit/client";
+import type { MatchEventType } from "@prisma/client";
 import { upsertMatch, ingestNormalizedEvent } from "../lib/sports/ingest";
 import { toNormalizedMatch, matchWithTeams, type MatchWithTeams } from "../lib/db/match-includes";
 import { publishRealtimeMessage } from "../lib/redis/pubsub";
@@ -91,15 +98,29 @@ async function handleDetectedPost(
   });
   if (existingEvent) return null;
 
-  const side = detectScoringSide(post.title, match.homeTeam.name, match.awayTeam.name, currentScore);
-  if (!side) {
+  // Goals get the high-confidence structured "Goal Clip" parse (bracket
+  // convention, see parse-goal-post.ts) with a fallback baked in; red
+  // cards have no equivalent convention, so they use the generic
+  // score/alias heuristics directly.
+  const resolved =
+    eventType === "GOAL"
+      ? resolveGoalEvent(post.title, match.homeTeam.name, match.awayTeam.name, currentScore)
+      : (() => {
+          const side = detectScoringSide(post.title, match.homeTeam.name, match.awayTeam.name, currentScore);
+          return side
+            ? { side, playerName: extractPlayerName(post.title), minute: extractMinute(post.title), extraMinute: null, isPenalty: false }
+            : null;
+        })();
+
+  if (!resolved) {
     logger.info("reddit_live_event_team_ambiguous", { matchId: match.id, type: eventType, title: post.title });
     return null;
   }
 
+  const { side, playerName, extraMinute, isPenalty } = resolved;
+  const minute = resolved.minute ?? elapsedMinutes(match.kickoffAt);
   const team = side === "home" ? match.homeTeam : match.awayTeam;
-  const minute = extractMinute(post.title) ?? elapsedMinutes(match.kickoffAt);
-  const playerName = extractPlayerName(post.title);
+  const matchEventType: MatchEventType = eventType === "GOAL" && isPenalty ? "PENALTY_GOAL" : eventType;
 
   let nextScore = currentScore;
 
@@ -112,10 +133,10 @@ async function handleDetectedPost(
 
   const { event } = await ingestNormalizedEvent(match.id, {
     externalId,
-    type: eventType,
+    type: matchEventType,
     detail: null,
     minute,
-    extraMinute: null,
+    extraMinute,
     teamExternalId: team.externalId,
     playerId: null,
     playerName,
@@ -169,7 +190,7 @@ async function handleDetectedPost(
     },
   });
 
-  logger.info("reddit_live_event_detected", { matchId: match.id, type: eventType, postId: post.id, playerName, minute });
+  logger.info("reddit_live_event_detected", { matchId: match.id, type: matchEventType, postId: post.id, playerName, minute });
 
   return nextScore;
 }

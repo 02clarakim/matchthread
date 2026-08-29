@@ -91,7 +91,8 @@ describe("workers/reddit-live-poller (real Postgres/Redis, mocked Reddit search)
     goalPosts.push(
       fakePost({
         id: `goal-${suffix}`,
-        title: "[Goal Clip] Test Scorer 11' | Reddit Poller Home 1-0 Reddit Poller Away",
+        // real r/soccer "Goal Clip" title convention — bracket marks the scorer's side
+        title: "Reddit Poller Home [1] - 0 Reddit Poller Away - Test Scorer 11'",
       })
     );
 
