@@ -7,11 +7,17 @@ import { logger } from "../logger";
 const REDDIT_TOKEN_CACHE_KEY = "reddit:access_token";
 const USER_AGENT = process.env.REDDIT_USER_AGENT || "football-realtime/0.1";
 
-// Conservative client-side ceiling, well under Reddit's own per-client
-// rate limit — this protects the app from a runaway polling loop hammering
-// Reddit, not the other way around.
-const MAX_SEARCHES_PER_WINDOW = 30;
-const RATE_LIMIT_WINDOW_SECONDS = 600;
+// Conservative client-side ceiling, well under Reddit's own documented
+// OAuth script-app limit (~60/min) — this protects the app from a runaway
+// polling loop hammering Reddit, not the other way around.
+//
+// Sized for the live-poller (workers/reddit-live-poller.ts): at a 20s
+// interval, one tracked match costs up to 3 searches/cycle (goal flair
+// search, its keyword fallback, and a red-card search) = ~9/min per match.
+// 45/min leaves headroom for a couple of concurrently tracked matches
+// plus the event-triggered searches from social-ingestion.ts.
+const MAX_SEARCHES_PER_WINDOW = 45;
+const RATE_LIMIT_WINDOW_SECONDS = 60;
 
 export function isRedditConfigured(): boolean {
   return Boolean(process.env.REDDIT_CLIENT_ID && process.env.REDDIT_CLIENT_SECRET);

@@ -284,6 +284,34 @@ semantic similarity    15%   (renormalized out of the total when AI wasn't used)
 
 ---
 
+## Reddit-Sourced Live Detection (v1)
+
+`workers/sports-poller.ts` needs an official sports data API to know when something happened. A live-scores tier of one exists (see [Local Setup](#local-setup)), but it costs money and isn't a hard requirement to demonstrate the real-time architecture — so `workers/reddit-live-poller.ts` is an alternative source for v1: it treats **Reddit itself** as the live-event feed, on the premise that r/soccer's community usually posts a goal clip within seconds of it happening, often faster than a delayed API would confirm it anyway.
+
+**How it works:** every 20s, for each match that's `LIVE` or `SCHEDULED` with kickoff already passed, it searches r/soccer and feeds anything it finds through the exact same `ingestNormalizedEvent` pipeline every other source uses — same idempotency, same Redis publish, same WebSocket fan-out. The triggering post is attached as the event's highlight immediately (score 1.0, method `DETERMINISTIC`) instead of going through a separate post-hoc search, since it *is* the source, not something found afterward.
+
+**Confidence is not uniform across event types — this is the tradeoff to know before trusting this in front of anyone:**
+
+| Event | Detection | Confidence | Why |
+|---|---|---|---|
+| Goals | r/soccer's dedicated **"Goal Clip"** flair (with a keyword-search fallback if that returns nothing) | High | A purpose-built signal — someone using this flair is asserting "this is a goal," not just discussing the match. Comes with an instant embeddable clip. |
+| Red cards | Keyword search only (`"<team> <team> red card"`) | Lower | No dedicated flair exists for these. Can miss one, or occasionally match a post about a red card from an unrelated match involving the same team. |
+| Yellow cards, substitutions | **Not detected** | — | There's no "someone always posts this" signal on Reddit the way there is for goals. Closing this gap needs an official data source (`workers/sports-poller.ts`), free or paid. Demonstrate them manually with `npm run simulate-event -- --type=yellow` / `--type=sub`. |
+
+**Parsing is best-effort, not authoritative.** `lib/reddit/parse-goal-post.ts` extracts minute, player name, and scoring team from free-text titles humans wrote, not a structured field:
+
+- **Minute** — regex for a `\d{1,3}'` / `\d{1,3} min` pattern; falls back to elapsed wall-clock time since kickoff if the title doesn't have one.
+- **Player name** — the text before the first minute marker or delimiter; returns `null` (never a bad guess) if the leading text doesn't look like a plausible name.
+- **Scoring team** — tries alias matching first (works when only one team is named), then falls back to **parsing the score out of the title and comparing it to the match's current known score** — e.g. "Julián Álvarez 65' | Atletico Madrid 1-0 Sevilla" names both teams, so it reads the `1-0`, works out from word order which number belongs to which team, and checks which one just went up. This is the same score-delta idea as the fallback in `workers/sports-poller.ts` for providers that don't expose per-event data. If neither strategy resolves it, **the post is skipped** — an auto-detected goal wrongly credited to the wrong team would also mis-increment the scoreboard, which is worse than not showing it at all.
+
+**Because there's no official status/score feed**, this worker also heuristically flips a match `SCHEDULED → LIVE` at kickoff time and `LIVE → FINISHED` after an assumed ~125-minute duration, and refreshes `minute` from elapsed time each cycle (on top of the client-side ticking in [Real-Time Architecture](#real-time-architecture)).
+
+**Untested against live Reddit from this environment** — Reddit is unreachable from where this was built (network policy), so the exact flair string (`GOAL_CLIP_FLAIR` in `lib/reddit/live-detector.ts`) is the human-readable text without the emoji shortcode Reddit's UI shows next to it, and hasn't been confirmed against a real search response. If it doesn't match, goal detection still works via the keyword fallback — just at lower precision, same as red cards. The full pipeline this feeds into (event ingestion, score increment, highlight attach, idempotency, ambiguous-team skip) *is* verified, against real Postgres/Redis with the Reddit network call mocked — see `tests/integration/reddit-live-poller.test.ts`.
+
+To run it: `npm run worker:reddit-live-poller` (requires `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` — see [Environment Variables](#environment-variables); without them it logs a warning and does nothing, same graceful-skip behavior as every other optional provider in this app).
+
+---
+
 ## Reliability
 
 **Idempotency** is enforced at three layers, from fastest/weakest to slowest/authoritative:
@@ -344,19 +372,22 @@ npm run dev                 # Next.js app  — http://localhost:3000
 npm run ws-server           # WebSocket gateway (separate terminal) — ws://localhost:4001
 ```
 
-Optional, for a live (non-demo) match feed:
+Optional, for a live (non-demo) match feed — two independent sources, see [Reddit-Sourced Live
+Detection](#reddit-sourced-live-detection-v1) for the tradeoffs between them:
 
 ```bash
-npm run worker:sports-poller   # requires SPORTS_API_KEY
+npm run worker:reddit-live-poller   # requires REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET — v1 default, free
+npm run worker:sports-poller        # requires SPORTS_API_KEY — official data, but see note below
 ```
 
-> **football-data.org free-tier limitations, confirmed against their current pricing/coverage
-> pages (not assumed):** the free tier explicitly returns **delayed** scores, not live —
-> real-time/in-play data requires a paid "Livescores" add-on. Free-tier competition coverage
-> is inconsistent between their own marketing copy and pricing table for some leagues (Premier
-> League and Bundesliga are reliably free; La Liga's free-tier status is ambiguous — confirm on
-> your account after registering). None of this blocks the demo experience above, which never
-> depends on a live key — see [Demo Mode](#demo-mode).
+> **football-data.org pricing, confirmed against their current pages (not assumed):** the free
+> tier returns **delayed** scores, not live — real-time/in-play data needs their "Free w/
+> Livescores" tier, €12/month (not the €29 ML/Deep-Data tiers, which bundle extras this app
+> doesn't use). Free-tier competition coverage lists Premier League, Bundesliga, and La Liga
+> among others — confirm on your own account after registering, since this page showed some
+> inconsistency between its marketing copy and pricing table when checked. Neither of this
+> blocks the demo experience above, which never depends on a live key — see [Demo
+> Mode](#demo-mode).
 
 Other commands:
 
