@@ -12,10 +12,11 @@ const USER_AGENT = process.env.REDDIT_USER_AGENT || "football-realtime/0.1";
 // polling loop hammering Reddit, not the other way around.
 //
 // Sized for the live-poller (workers/reddit-live-poller.ts): at a 20s
-// interval, one tracked match costs up to 3 searches/cycle (goal flair
-// search, its keyword fallback, and a red-card search) = ~9/min per match.
-// 45/min leaves headroom for a couple of concurrently tracked matches
-// plus the event-triggered searches from social-ingestion.ts.
+// interval, one tracked match costs up to 4 searches/cycle (exact-flair
+// goal search, its lenient-flair and keyword fallbacks, and a red-card
+// search) = ~12/min per match — but only the worst case where every tier
+// misses. 45/min leaves headroom for a couple of concurrently tracked
+// matches plus the event-triggered searches from social-ingestion.ts.
 const MAX_SEARCHES_PER_WINDOW = 45;
 const RATE_LIMIT_WINDOW_SECONDS = 60;
 

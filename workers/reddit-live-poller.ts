@@ -108,7 +108,14 @@ async function handleDetectedPost(
       : (() => {
           const side = detectScoringSide(post.title, match.homeTeam.name, match.awayTeam.name, currentScore);
           return side
-            ? { side, playerName: extractPlayerName(post.title), minute: extractMinute(post.title), extraMinute: null, isPenalty: false }
+            ? {
+                side,
+                playerName: extractPlayerName(post.title),
+                minute: extractMinute(post.title),
+                extraMinute: null,
+                isPenalty: false,
+                isOwnGoal: false,
+              }
             : null;
         })();
 

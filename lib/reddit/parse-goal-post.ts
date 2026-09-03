@@ -10,12 +10,25 @@ import { normalizeText } from "../matching/text";
  * would otherwise risk incrementing the wrong side's score.
  */
 
-/** Zero-width/bidi marks that show up in some Reddit titles (observed around minute apostrophes) and break naive regexes. */
+/**
+ * Zero-width/bidi marks that show up in some Reddit titles (observed around
+ * minute apostrophes) and break naive regexes, plus aggregate-score
+ * annotations like `[4-1 on agg.]` that r/soccer appends on cup ties — those
+ * carry a hyphenated "X-Y" that isn't the live score line, so strip them
+ * before any score/team parsing runs.
+ */
 function cleanTitle(title: string): string {
-  return title.replace(/[​-‏‪-‮﻿]/g, "").trim();
+  return title
+    .replace(/[​-‏‪-‮﻿]/g, "")
+    .replace(/\s*\[[^\]]*\bagg\b[^\]]*\]/gi, "")
+    .trim();
 }
 
-const MINUTE_PATTERN = /(\d{1,3})\s*(?:['’]|min\b)/i;
+/** A minute marker: `84'`, `90+5'`, or the `90'+7'` variant (apostrophe before the plus). */
+const MINUTE_PATTERN = /(\d{1,3})(?:['’‘]?\s*\+\s*\d{1,2})?\s*(?:['’‘]|min\b)/i;
+
+/** Non-name tokens r/soccer appends inside the scorer slot: `Penalty`, `OG` / `own goal`. */
+const SCORER_ANNOTATION_PATTERN = /\b(?:penalty|pen\.?|o\.?g\.?|own[ -]goal)\b/gi;
 
 export function extractMinute(title: string): number | null {
   const match = cleanTitle(title).match(MINUTE_PATTERN);
@@ -25,18 +38,29 @@ export function extractMinute(title: string): number | null {
 }
 
 /**
- * Takes the leading text before the first minute marker / common
- * delimiter as a best-effort player name. Generic fallback for titles that
- * don't match the r/soccer "Goal Clip" convention parseGoalClipTitle()
- * targets — see that function's doc comment for the format this expects.
+ * Best-effort player name for titles that don't match the structured
+ * "Goal Clip" convention parseGoalClipTitle() targets. r/soccer's
+ * convention puts the scorer between the score line and the minute
+ * (`Team X-Y Team - Player 87'`), so this takes the text after the *last*
+ * " - " and before the minute marker — not the leading text, which is the
+ * score line. Falls back to leading text for the older `Player 23'` shape.
  */
 export function extractPlayerName(title: string): string | null {
-  const withoutFlairTag = cleanTitle(title).replace(/^\[[^\]]*\]\s*/, "").trim();
-  const cutMatch = withoutFlairTag.match(/^(.*?)(?:\s*\d{1,3}\s*(?:['’]|min\b)|\s*[|:(]|\s+-\s+)/i);
-  const candidate = (cutMatch ? cutMatch[1] : withoutFlairTag).trim();
+  const cleaned = cleanTitle(title)
+    .replace(/^\[[^\]]*\]\s*/, "")
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim();
+
+  const minuteMatch = cleaned.match(MINUTE_PATTERN);
+  const beforeMinute = (minuteMatch ? cleaned.slice(0, minuteMatch.index) : cleaned).trim();
+
+  const lastDash = beforeMinute.lastIndexOf(" - ");
+  let candidate = (lastDash === -1 ? beforeMinute : beforeMinute.slice(lastDash + 3)).trim();
+  candidate = candidate.replace(SCORER_ANNOTATION_PATTERN, "").replace(/\s{2,}/g, " ").trim();
 
   if (!candidate || candidate.length < 2 || candidate.length > 40) return null;
   if (/\bvs\.?\b/i.test(candidate)) return null;
+  if (/\d/.test(candidate)) return null; // still carrying a score fragment — not a clean name
 
   return candidate;
 }
@@ -128,10 +152,12 @@ export interface ParsedGoalClipTitle {
   minute: number;
   extraMinute: number | null;
   isPenalty: boolean;
+  isOwnGoal: boolean;
 }
 
 const SCORE_LINE_PATTERN = /^(.+?)\s+(\[?)(\d{1,2})(\]?)\s*-\s*(\[?)(\d{1,2})(\]?)\s+(.+)$/;
-const MINUTE_MARKER_PATTERN = /(\d{1,3})(?:\+(\d{1,2}))?\s*['’‘]/g;
+// `90+5'` and the `90'+7'` variant (apostrophe before the plus) both parse to minute 90, extra 5/7.
+const MINUTE_MARKER_PATTERN = /(\d{1,3})(?:['’‘]?\s*\+\s*(\d{1,2}))?\s*['’‘]/g;
 
 export function parseGoalClipTitle(rawTitle: string): ParsedGoalClipTitle | null {
   const title = cleanTitle(rawTitle);
@@ -156,8 +182,9 @@ export function parseGoalClipTitle(rawTitle: string): ParsedGoalClipTitle | null
   const scoreLine = beforeMinute.slice(0, lastDashIndex).trim();
   let playerSection = beforeMinute.slice(lastDashIndex + 3).trim();
 
-  const isPenalty = /\bpenalty\b/i.test(playerSection);
-  playerSection = playerSection.replace(/\bpenalty\b/i, "").trim();
+  const isPenalty = /\b(?:penalty|pen\.?)\b/i.test(playerSection);
+  const isOwnGoal = /\b(?:o\.?g\.?|own[ -]goal)\b/i.test(playerSection);
+  playerSection = playerSection.replace(SCORER_ANNOTATION_PATTERN, "").replace(/\s{2,}/g, " ").trim();
   const playerName = playerSection.length >= 2 && playerSection.length <= 40 ? playerSection : null;
 
   const scoreMatch = scoreLine.match(SCORE_LINE_PATTERN);
@@ -182,6 +209,7 @@ export function parseGoalClipTitle(rawTitle: string): ParsedGoalClipTitle | null
     minute,
     extraMinute,
     isPenalty,
+    isOwnGoal,
   };
 }
 
@@ -208,6 +236,7 @@ export interface ResolvedGoalEvent {
   minute: number | null;
   extraMinute: number | null;
   isPenalty: boolean;
+  isOwnGoal: boolean;
 }
 
 /**
@@ -235,6 +264,7 @@ export function resolveGoalEvent(
         minute: structured.minute,
         extraMinute: structured.extraMinute,
         isPenalty: structured.isPenalty,
+        isOwnGoal: structured.isOwnGoal,
       };
     }
   }
@@ -248,5 +278,6 @@ export function resolveGoalEvent(
     minute: extractMinute(rawTitle),
     extraMinute: null,
     isPenalty: false,
+    isOwnGoal: false,
   };
 }

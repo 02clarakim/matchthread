@@ -21,6 +21,11 @@ import type { NormalizedEvent } from "../lib/sports/types";
  *   npm run simulate-event -- --type=var                 a VAR decision
  *   npm run simulate-event -- --match=seed-match-atletico-sevilla
  *                                                         target any seeded match by externalId
+ *   npm run simulate-event -- --side=away                 attribute the event to the away team
+ *                                                         instead of home (default: home)
+ *   npm run simulate-event -- --player="Álex Baena" --minute=4 --assist="Name"
+ *                                                         override the roster-based defaults with
+ *                                                         real facts instead of illustrative names
  *   npm run simulate-event -- --replay                   re-sends the last simulated event's
  *                                                         exact externalId, to demonstrate
  *                                                         that duplicate ingestion is a no-op
@@ -67,21 +72,41 @@ function rosterFor(teamExternalId: string): string[] {
   return TEAM_ROSTERS[teamExternalId] ?? GENERIC_ROSTER;
 }
 
-function buildScenario(type: ScenarioType, homeTeamExternalId: string): Scenario {
-  const [scorer, assist, thirdPlayer] = rosterFor(homeTeamExternalId);
+type Side = "home" | "away";
+
+interface ScenarioOverrides {
+  player?: string;
+  assist?: string;
+}
+
+function buildScenario(
+  type: ScenarioType,
+  side: Side,
+  teamExternalId: string,
+  overrides: ScenarioOverrides
+): Scenario {
+  const [rosterScorer, rosterAssist, thirdPlayer] = rosterFor(teamExternalId);
+  const scorer = overrides.player ?? rosterScorer;
+  // With a real scorer given but no real assist, don't invent a fictional
+  // one to pair with it — only fall back to the illustrative roster assist
+  // when nothing at all was overridden (pure demo mode).
+  const assistName = overrides.player ? overrides.assist ?? null : overrides.assist ?? rosterAssist;
+
+  const goalDelta = side === "home" ? { home: 1, away: 0 } : { home: 0, away: 1 };
+  const noDelta = { home: 0, away: 0 };
 
   switch (type) {
     case "goal":
-      return { type: "GOAL", detail: null, playerName: scorer, assistName: assist, scoreDelta: { home: 1, away: 0 } };
+      return { type: "GOAL", detail: null, playerName: scorer, assistName, scoreDelta: goalDelta };
     case "yellow":
-      return { type: "YELLOW_CARD", detail: "Foul", playerName: assist, assistName: null, scoreDelta: { home: 0, away: 0 } };
+      return { type: "YELLOW_CARD", detail: "Foul", playerName: overrides.player ?? rosterAssist, assistName: null, scoreDelta: noDelta };
     case "red":
       return {
         type: "RED_CARD",
         detail: "Serious foul play",
-        playerName: thirdPlayer,
+        playerName: overrides.player ?? thirdPlayer,
         assistName: null,
-        scoreDelta: { home: 0, away: 0 },
+        scoreDelta: noDelta,
       };
     case "var":
       return {
@@ -89,15 +114,15 @@ function buildScenario(type: ScenarioType, homeTeamExternalId: string): Scenario
         detail: "Goal disallowed for offside",
         playerName: scorer,
         assistName: null,
-        scoreDelta: { home: 0, away: 0 },
+        scoreDelta: noDelta,
       };
     case "sub":
       return {
         type: "SUBSTITUTION",
         detail: null,
-        playerName: thirdPlayer,
-        assistName: scorer,
-        scoreDelta: { home: 0, away: 0 },
+        playerName: overrides.player ?? thirdPlayer,
+        assistName: overrides.assist ?? scorer,
+        scoreDelta: noDelta,
       };
   }
 }
@@ -129,12 +154,22 @@ function buildCandidatePosts(scenario: Scenario, minute: number, opponentName: s
   ];
 }
 
+function argValue(args: string[], flag: string): string | undefined {
+  const prefix = `--${flag}=`;
+  const arg = args.find((a) => a.startsWith(prefix));
+  return arg?.slice(prefix.length);
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
-  const typeArg = args.find((a) => a.startsWith("--type="))?.split("=")[1] as ScenarioType | undefined;
-  const matchArg = args.find((a) => a.startsWith("--match="))?.split("=")[1];
+  const type = (argValue(args, "type") as ScenarioType | undefined) ?? "goal";
+  const match = argValue(args, "match") ?? DEFAULT_MATCH_EXTERNAL_ID;
+  const side = (argValue(args, "side") as Side | undefined) ?? "home";
+  const player = argValue(args, "player");
+  const assist = argValue(args, "assist");
+  const minute = argValue(args, "minute") ? Number(argValue(args, "minute")) : undefined;
   const replay = args.includes("--replay");
-  return { type: typeArg ?? "goal", match: matchArg ?? DEFAULT_MATCH_EXTERNAL_ID, replay };
+  return { type, match, side, player, assist, minute, replay };
 }
 
 async function runReplay(matchExternalId: string) {
@@ -172,7 +207,13 @@ async function runReplay(matchExternalId: string) {
   console.log(isNew ? "Unexpected: a duplicate was created." : "Idempotency held — no duplicate was created.\n");
 }
 
-async function runNewEvent(matchExternalId: string, scenarioType: ScenarioType) {
+async function runNewEvent(
+  matchExternalId: string,
+  scenarioType: ScenarioType,
+  side: Side,
+  overrides: ScenarioOverrides,
+  minuteOverride: number | undefined
+) {
   const match = await prisma.match.findUnique({
     where: { externalId: matchExternalId },
     include: { homeTeam: true, awayTeam: true, league: true },
@@ -184,8 +225,9 @@ async function runNewEvent(matchExternalId: string, scenarioType: ScenarioType) 
     return;
   }
 
-  const scenario = buildScenario(scenarioType, match.homeTeam.externalId);
-  const minute = Math.min(90, (match.minute ?? 60) + Math.floor(Math.random() * 5) + 1);
+  const scoringTeamExternalId = side === "home" ? match.homeTeam.externalId : match.awayTeam.externalId;
+  const scenario = buildScenario(scenarioType, side, scoringTeamExternalId, overrides);
+  const minute = minuteOverride ?? Math.min(90, (match.minute ?? 60) + Math.floor(Math.random() * 5) + 1);
 
   const updatedMatch = await upsertMatch({
     externalId: match.externalId,
@@ -221,7 +263,7 @@ async function runNewEvent(matchExternalId: string, scenarioType: ScenarioType) 
     detail: scenario.detail,
     minute,
     extraMinute: null,
-    teamExternalId: match.homeTeam.externalId,
+    teamExternalId: scoringTeamExternalId,
     playerId: null,
     playerName: scenario.playerName,
     assistName: scenario.assistName,
@@ -253,11 +295,11 @@ async function runNewEvent(matchExternalId: string, scenarioType: ScenarioType) 
 }
 
 async function main() {
-  const { type, match, replay } = parseArgs();
+  const { type, match, side, player, assist, minute, replay } = parseArgs();
   if (replay) {
     await runReplay(match);
   } else {
-    await runNewEvent(match, type);
+    await runNewEvent(match, type, side, { player, assist }, minute);
   }
 }
 

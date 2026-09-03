@@ -2,7 +2,7 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { prisma } from "../lib/db/prisma";
 import { redis, redisPublisher } from "../lib/redis/client";
-import { upsertMatch, ingestNormalizedEvent, waitForPendingBackgroundWork } from "../lib/sports/ingest";
+import { upsertMatch, upsertLeague, upsertTeam, ingestNormalizedEvent, waitForPendingBackgroundWork } from "../lib/sports/ingest";
 import { attachCommentary } from "../workers/commentary-worker";
 import { processEventMatching } from "../workers/event-processor";
 import type { NormalizedEvent, NormalizedMatch } from "../lib/sports/types";
@@ -42,6 +42,66 @@ const TEAMS = {
   bayernMunich: team("seed-team-bayern-munich", "Bayern Munich", "BAY"),
   dortmund: team("seed-team-dortmund", "Borussia Dortmund", "BVB"),
 };
+
+/**
+ * The rest of each league's clubs — browsable/followable, but with no
+ * seeded matches (a team doesn't need a fixture to appear in "Find teams"
+ * or a personalized feed; team pages already show an empty state for "no
+ * matches yet"). TEAMS above is reserved for clubs the seeded demo matches
+ * actually use, since those also need a roster in simulate-event.ts.
+ */
+const EXTRA_PREMIER_LEAGUE_TEAMS = [
+  team("seed-team-bournemouth", "Bournemouth", "BOU"),
+  team("seed-team-brentford", "Brentford", "BRE"),
+  team("seed-team-brighton", "Brighton & Hove Albion", "BHA"),
+  team("seed-team-burnley", "Burnley", "BUR"),
+  team("seed-team-crystal-palace", "Crystal Palace", "CRY"),
+  team("seed-team-everton", "Everton", "EVE"),
+  team("seed-team-fulham", "Fulham", "FUL"),
+  team("seed-team-leeds", "Leeds United", "LEE"),
+  team("seed-team-nottm-forest", "Nottingham Forest", "NFO"),
+  team("seed-team-sunderland", "Sunderland", "SUN"),
+  team("seed-team-west-ham", "West Ham United", "WHU"),
+  team("seed-team-wolves", "Wolverhampton Wanderers", "WOL"),
+];
+
+const EXTRA_LALIGA_TEAMS = [
+  team("seed-team-athletic-bilbao", "Athletic Bilbao", "ATH"),
+  team("seed-team-real-betis", "Real Betis", "BET"),
+  team("seed-team-celta-vigo", "Celta Vigo", "CEL"),
+  team("seed-team-espanyol", "Espanyol", "ESP"),
+  team("seed-team-getafe", "Getafe", "GET"),
+  team("seed-team-girona", "Girona", "GIR"),
+  team("seed-team-mallorca", "Mallorca", "MLL"),
+  team("seed-team-osasuna", "Osasuna", "OSA"),
+  team("seed-team-rayo-vallecano", "Rayo Vallecano", "RAY"),
+  team("seed-team-real-sociedad", "Real Sociedad", "RSO"),
+  team("seed-team-valencia", "Valencia", "VAL"),
+  team("seed-team-villarreal", "Villarreal", "VIL"),
+  team("seed-team-alaves", "Alavés", "ALA"),
+  team("seed-team-levante", "Levante", "LEV"),
+  team("seed-team-elche", "Elche", "ELC"),
+  team("seed-team-real-oviedo", "Real Oviedo", "OVI"),
+];
+
+const EXTRA_BUNDESLIGA_TEAMS = [
+  team("seed-team-rb-leipzig", "RB Leipzig", "RBL"),
+  team("seed-team-leverkusen", "Bayer Leverkusen", "B04"),
+  team("seed-team-frankfurt", "Eintracht Frankfurt", "SGE"),
+  team("seed-team-stuttgart", "VfB Stuttgart", "VFB"),
+  team("seed-team-gladbach", "Borussia Mönchengladbach", "BMG"),
+  team("seed-team-werder-bremen", "Werder Bremen", "SVW"),
+  team("seed-team-wolfsburg", "VfL Wolfsburg", "WOB"),
+  team("seed-team-mainz", "Mainz 05", "M05"),
+  team("seed-team-union-berlin", "Union Berlin", "FCU"),
+  team("seed-team-freiburg", "SC Freiburg", "SCF"),
+  team("seed-team-augsburg", "FC Augsburg", "FCA"),
+  team("seed-team-hoffenheim", "TSG Hoffenheim", "TSG"),
+  team("seed-team-st-pauli", "FC St. Pauli", "STP"),
+  team("seed-team-heidenheim", "FC Heidenheim", "HDH"),
+  team("seed-team-bochum", "VfL Bochum", "BOC"),
+  team("seed-team-hamburger-sv", "Hamburger SV", "HSV"),
+];
 
 function minutesAgo(minutes: number): Date {
   return new Date(Date.now() - minutes * 60 * 1000);
@@ -318,19 +378,24 @@ async function seedTottenhamVsAstonVilla() {
   });
 }
 
-/** The specific fixture requested for a live test run: kicks off tomorrow at 12:30pm Pacific. */
-async function seedAtleticoMadridVsSevilla() {
+/**
+ * The specific fixture requested for a live test run: kicks off tomorrow
+ * at 12:30pm Pacific. Sevilla is the home side — this is played at their
+ * own ground (Ramón Sánchez Pizjuán), confirmed against real match
+ * listings rather than assumed.
+ */
+async function seedSevillaVsAtleticoMadrid() {
   await upsertMatch({
     externalId: "seed-match-atletico-sevilla",
     league: LALIGA,
-    homeTeam: TEAMS.atleticoMadrid,
-    awayTeam: TEAMS.sevilla,
+    homeTeam: TEAMS.sevilla,
+    awayTeam: TEAMS.atleticoMadrid,
     status: "SCHEDULED",
     homeScore: null,
     awayScore: null,
     minute: null,
     kickoffAt: tomorrowAtLocalTime(12, 30, "America/Los_Angeles"),
-    venue: "Estadio Metropolitano",
+    venue: "Estadio Ramón Sánchez Pizjuán",
   });
 }
 
@@ -401,6 +466,23 @@ async function seedBayernVsDortmund() {
   );
 }
 
+/** Fills out the rest of each league's roster so "Find teams" reflects real league sizes (20/20/18), not just the clubs used by seeded matches. */
+async function seedFullLeagueRosters() {
+  const pl = await upsertLeague(PL);
+  const laliga = await upsertLeague(LALIGA);
+  const bundesliga = await upsertLeague(BUNDESLIGA);
+
+  for (const t of EXTRA_PREMIER_LEAGUE_TEAMS) await upsertTeam(t, pl.id);
+  for (const t of EXTRA_LALIGA_TEAMS) await upsertTeam(t, laliga.id);
+  for (const t of EXTRA_BUNDESLIGA_TEAMS) await upsertTeam(t, bundesliga.id);
+
+  logger.info("seed_extra_teams_created", {
+    premierLeague: EXTRA_PREMIER_LEAGUE_TEAMS.length,
+    laLiga: EXTRA_LALIGA_TEAMS.length,
+    bundesliga: EXTRA_BUNDESLIGA_TEAMS.length,
+  });
+}
+
 async function seedUsers() {
   const passwordHash = await bcrypt.hash("password123", 10);
 
@@ -458,8 +540,9 @@ async function main() {
   await seedLiverpoolVsManUtd();
   await seedBarcelonaVsRealMadrid();
   await seedTottenhamVsAstonVilla();
-  await seedAtleticoMadridVsSevilla();
+  await seedSevillaVsAtleticoMadrid();
   await seedBayernVsDortmund();
+  await seedFullLeagueRosters();
   await seedUsers();
 
   logger.info("seed_completed", {});
