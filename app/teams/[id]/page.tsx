@@ -14,31 +14,44 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const session = await auth();
 
-  const team = await prisma.team.findUnique({ where: { id }, include: { league: true } });
+  // `id` may be the profile slug ("tottenham-hotspur") or the raw cuid.
+  const team = await prisma.team.findFirst({
+    where: { OR: [{ slug: id }, { id }] },
+    include: { league: true },
+  });
   if (!team) notFound();
+  const teamId = team.id;
 
-  const teamFilter = { OR: [{ homeTeamId: id }, { awayTeamId: id }] };
+  const teamFilter = { OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }] };
 
-  const [live, upcoming, recent, isFavorited, highlightRows] = await Promise.all([
+  const now = new Date();
+
+  const [live, upcoming, recent, finishedForForm, isFavorited, highlightRows] = await Promise.all([
     prisma.match.findMany({
       where: { ...teamFilter, status: { in: ["LIVE", "PAUSED"] } },
       include: matchWithTeams,
       orderBy: { kickoffAt: "asc" },
     }),
     prisma.match.findMany({
-      where: { ...teamFilter, status: "SCHEDULED" },
+      where: { ...teamFilter, status: "SCHEDULED", kickoffAt: { gte: now } },
       include: matchWithTeams,
       orderBy: { kickoffAt: "asc" },
-      take: 5,
+      take: 6,
     }),
     prisma.match.findMany({
       where: { ...teamFilter, status: "FINISHED" },
       include: matchWithTeams,
       orderBy: { kickoffAt: "desc" },
-      take: 5,
+      take: 6,
+    }),
+    prisma.match.findMany({
+      where: { ...teamFilter, status: "FINISHED", homeScore: { not: null }, awayScore: { not: null } },
+      select: { homeTeamId: true, homeScore: true, awayScore: true },
+      orderBy: { kickoffAt: "desc" },
+      take: 30,
     }),
     session?.user?.id
-      ? prisma.userFavoriteTeam.findUnique({ where: { userId_teamId: { userId: session.user.id, teamId: id } } })
+      ? prisma.userFavoriteTeam.findUnique({ where: { userId_teamId: { userId: session.user.id, teamId } } })
       : Promise.resolve(null),
     prisma.eventSocialMatch.findMany({
       where: { event: { match: teamFilter } },
@@ -48,6 +61,21 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
     }),
   ]);
 
+  const record = finishedForForm.reduce(
+    (acc, m) => {
+      const isHome = m.homeTeamId === teamId;
+      const gf = (isHome ? m.homeScore : m.awayScore) ?? 0;
+      const ga = (isHome ? m.awayScore : m.homeScore) ?? 0;
+      acc.gf += gf;
+      acc.ga += ga;
+      if (gf > ga) acc.w += 1;
+      else if (gf < ga) acc.l += 1;
+      else acc.d += 1;
+      return acc;
+    },
+    { w: 0, d: 0, l: 0, gf: 0, ga: 0 }
+  );
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-8">
       <div className="flex items-center gap-4">
@@ -55,6 +83,11 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
         <div className="flex-1">
           <h1 className="text-xl font-semibold">{team.name}</h1>
           {team.league && <p className="text-sm text-muted">{team.league.name}</p>}
+          {finishedForForm.length > 0 && (
+            <p className="mt-1 text-xs text-muted tabular-nums">
+              Last {finishedForForm.length}: {record.w}W&nbsp;{record.d}D&nbsp;{record.l}L · {record.gf}–{record.ga} GF/GA
+            </p>
+          )}
         </div>
         {session?.user?.id ? (
           <FavoriteButton teamId={team.id} initiallyFavorited={Boolean(isFavorited)} />
@@ -125,7 +158,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
                   },
                   event: { id: h.eventId },
                 }}
-                matchId={h.event.match.id}
+                matchId={h.event.match.slug ?? h.event.match.id}
                 matchLabel={`${h.event.match.homeTeam.name} vs ${h.event.match.awayTeam.name}`}
               />
             ))}

@@ -9,7 +9,7 @@ export function MatchCard({ match }: { match: ApiMatch }) {
   const hasScore = match.homeScore !== null && match.awayScore !== null;
 
   return (
-    <Link href={`/matches/${match.id}`}>
+    <Link href={`/matches/${match.slug ?? match.id}`}>
       <Card className="p-3 hover:border-accent/50 transition-colors">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-muted truncate">{match.league.name}</span>

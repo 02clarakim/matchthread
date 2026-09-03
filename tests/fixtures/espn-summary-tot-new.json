@@ -1,0 +1,505 @@
+{
+  "header": {
+    "id": "401879312",
+    "competitions": [
+      {
+        "date": "2026-08-29T16:30Z",
+        "competitors": [
+          {
+            "homeAway": "home",
+            "winner": false,
+            "score": "0",
+            "team": {
+              "id": "367",
+              "displayName": "Tottenham Hotspur",
+              "abbreviation": "TOT",
+              "shortDisplayName": "Spurs"
+            }
+          },
+          {
+            "homeAway": "away",
+            "winner": true,
+            "score": "2",
+            "team": {
+              "id": "361",
+              "displayName": "Newcastle United",
+              "abbreviation": "NEW",
+              "shortDisplayName": "Newcastle"
+            }
+          }
+        ],
+        "status": {
+          "type": {
+            "name": "STATUS_FULL_TIME",
+            "completed": true
+          }
+        }
+      }
+    ]
+  },
+  "gameInfo": {
+    "venue": {
+      "fullName": "Tottenham Hotspur Stadium"
+    }
+  },
+  "keyEvents": [
+    {
+      "id": "51624642",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": ""
+      },
+      "type": {
+        "text": "Kickoff"
+      },
+      "team": null,
+      "participants": [],
+      "text": "First Half begins."
+    },
+    {
+      "id": "51624740",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "3'"
+      },
+      "type": {
+        "text": "Yellow Card"
+      },
+      "team": {
+        "id": "367",
+        "displayName": "Tottenham Hotspur"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Micky van de Ven"
+          },
+          "type": null
+        }
+      ],
+      "text": "Micky van de Ven (Tottenham Hotspur) is shown the yellow card for a bad foul."
+    },
+    {
+      "id": "51625921",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "13'"
+      },
+      "type": {
+        "text": "Yellow Card"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Nico González"
+          },
+          "type": null
+        }
+      ],
+      "text": "Nico González (Newcastle United) is shown the yellow card for a bad foul."
+    },
+    {
+      "id": "51630186",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "45'+2'"
+      },
+      "type": {
+        "text": "Halftime"
+      },
+      "team": null,
+      "participants": [],
+      "text": "First Half ends, Tottenham Hotspur 0, Newcastle United 0."
+    },
+    {
+      "id": "51631028",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "45'"
+      },
+      "type": {
+        "text": "Start 2nd Half"
+      },
+      "team": null,
+      "participants": [],
+      "text": null
+    },
+    {
+      "id": "51632485",
+      "scoringPlay": true,
+      "shootout": false,
+      "clock": {
+        "displayValue": "62'"
+      },
+      "type": {
+        "text": "Goal"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Anthony Elanga"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Amar Dedic"
+          },
+          "type": null
+        }
+      ],
+      "text": "Goal! Tottenham Hotspur 0, Newcastle United 1. Anthony Elanga (Newcastle United) left footed shot from the centre of the box to the bottom right corner. Assisted by Amar Dedic with a headed pass."
+    },
+    {
+      "id": "51633483",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "68'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "367",
+        "displayName": "Tottenham Hotspur"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Mikey Moore"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Archie Gray"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Tottenham Hotspur. Mikey Moore replaces Archie Gray."
+    },
+    {
+      "id": "51633484",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "68'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "367",
+        "displayName": "Tottenham Hotspur"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Destiny Udogie"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Andy Robertson"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Tottenham Hotspur. Destiny Udogie replaces Andy Robertson."
+    },
+    {
+      "id": "51633485",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "68'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "367",
+        "displayName": "Tottenham Hotspur"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Mohammed Kudus"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Mathys Tel"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Tottenham Hotspur. Mohammed Kudus replaces Mathys Tel."
+    },
+    {
+      "id": "51633623",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "71'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Nick Woltemade"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Joe Willock"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Newcastle United. Nick Woltemade replaces Joe Willock."
+    },
+    {
+      "id": "51633748",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "71'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Sean Steur"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Nico González"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Newcastle United. Sean Steur replaces Nico González."
+    },
+    {
+      "id": "51633799",
+      "scoringPlay": true,
+      "shootout": false,
+      "clock": {
+        "displayValue": "72'"
+      },
+      "type": {
+        "text": "Goal - Volley"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Yoane Wissa"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Nick Woltemade"
+          },
+          "type": null
+        }
+      ],
+      "text": "Goal! Tottenham Hotspur 0, Newcastle United 2. Yoane Wissa (Newcastle United) right footed shot from the left side of the six yard box to the centre of the goal. Assisted by Nick Woltemade following a corner."
+    },
+    {
+      "id": "51634056",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "75'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "367",
+        "displayName": "Tottenham Hotspur"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Dominic Solanke"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Sandro Tonali"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Tottenham Hotspur. Dominic Solanke replaces Sandro Tonali."
+    },
+    {
+      "id": "51634404",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "79'"
+      },
+      "type": {
+        "text": "Yellow Card"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Sven Botman"
+          },
+          "type": null
+        }
+      ],
+      "text": "Sven Botman (Newcastle United) is shown the yellow card."
+    },
+    {
+      "id": "51634804",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "82'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Jacob Ramsey"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Yoane Wissa"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Newcastle United. Jacob Ramsey replaces Yoane Wissa."
+    },
+    {
+      "id": "51634805",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "82'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Jacob Murphy"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Anthony Elanga"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Newcastle United. Jacob Murphy replaces Anthony Elanga."
+    },
+    {
+      "id": "51636083",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "90'+3'"
+      },
+      "type": {
+        "text": "Substitution"
+      },
+      "team": {
+        "id": "361",
+        "displayName": "Newcastle United"
+      },
+      "participants": [
+        {
+          "athlete": {
+            "displayName": "Bazoumana Touré"
+          },
+          "type": null
+        },
+        {
+          "athlete": {
+            "displayName": "Harvey Barnes"
+          },
+          "type": null
+        }
+      ],
+      "text": "Substitution, Newcastle United. Bazoumana Touré replaces Harvey Barnes."
+    },
+    {
+      "id": "51636184",
+      "scoringPlay": false,
+      "shootout": false,
+      "clock": {
+        "displayValue": "90'+5'"
+      },
+      "type": {
+        "text": "End Regular Time"
+      },
+      "team": null,
+      "participants": [],
+      "text": "Second Half ends, Tottenham Hotspur 0, Newcastle United 2."
+    }
+  ]
+}

@@ -7,16 +7,86 @@ const METHOD_LABEL: Record<ApiHighlight["matchingMethod"], string> = {
   SEMANTIC: "AI match",
 };
 
+/** redditmedia.com's `?embed=true` player — one iframe works for every clip host (v.redd.it, streamff, …). */
+function isRedditEmbed(url: string): boolean {
+  return url.includes("redditmedia.com") && url.includes("embed=true");
+}
+
 /**
- * Media, when present, streams directly from Reddit's own CDN
- * (v.redd.it / preview.redd.it) — this is an embed, not a re-host. We
- * never download or store the file ourselves (see README § Reliability /
- * Media Handling). If Reddit doesn't offer embeddable media for a post,
- * we fall back to a plain link — never a fake/broken player.
+ * Media, when present, is an embed or an outbound link — never a re-host.
+ * We never download or store the file ourselves (see README § Reliability /
+ * Media Handling).
+ *
+ *  - Native Reddit video (v.redd.it) → Reddit's own `redditmedia.com`
+ *    iframe player, inline with audio.
+ *  - An external clip host (streamin.link, streamff, …) can't be framed
+ *    cleanly, so we show a one-click "watch" panel that opens the clip's
+ *    own page directly — no nested Reddit card to click through.
+ *  - Otherwise a direct <video>/<img>, and failing that just the title
+ *    link below — never a fake/broken player.
  */
 function HighlightMedia({ highlight }: { highlight: ApiHighlight }) {
-  const { mediaUrl, mediaType } = highlight.socialPost;
+  const { mediaUrl, mediaType, clipUrl, clipHost, videoUrl, posterUrl } = highlight.socialPost;
+
+  // Best case: a direct .mp4 resolved from the clip host — plays inline, with sound.
+  if (videoUrl) {
+    return (
+      <div className="mb-2">
+        <video
+          controls
+          playsInline
+          preload="metadata"
+          poster={posterUrl ?? undefined}
+          src={videoUrl}
+          className="max-h-72 w-full rounded-md bg-black"
+        />
+        {clipUrl && (
+          <a
+            href={clipUrl}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className="mt-1 block text-xs text-muted hover:text-accent"
+          >
+            Trouble playing? Open on {clipHost ?? "the clip host"} ↗
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: we know the clip host but haven't resolved a playable file yet.
+  if (clipUrl) {
+    return (
+      <a
+        href={clipUrl}
+        target="_blank"
+        rel="noopener noreferrer nofollow"
+        className="mb-2 flex items-center gap-3 rounded-md border border-border bg-black/40 px-3 py-4 hover:border-accent/60 transition-colors"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-black">▶</span>
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Watch goal clip</span>
+          <span className="block truncate text-xs text-muted">opens {clipHost ?? "the clip host"} ↗</span>
+        </span>
+      </a>
+    );
+  }
+
   if (!mediaUrl) return null;
+
+  if (mediaType === "VIDEO" && isRedditEmbed(mediaUrl)) {
+    return (
+      <iframe
+        src={mediaUrl}
+        title={highlight.socialPost.title}
+        loading="lazy"
+        scrolling="no"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation"
+        allow="fullscreen; encrypted-media"
+        className="mb-2 h-96 w-full rounded-md border-0 bg-black"
+      />
+    );
+  }
 
   if (mediaType === "VIDEO") {
     return (

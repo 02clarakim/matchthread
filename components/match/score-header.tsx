@@ -1,7 +1,20 @@
-import type { ApiMatch } from "@/lib/types/api";
+import Link from "next/link";
+import type { ApiMatch, ApiTeam } from "@/lib/types/api";
 import { TeamBadge } from "@/components/teams/team-badge";
 import { StatusIndicator } from "@/components/match/live-badge";
 import { kickoffDateLabel, kickoffTimeLabel } from "@/lib/match-format";
+
+function TeamColumn({ team }: { team: ApiTeam }) {
+  return (
+    <Link
+      href={`/teams/${team.slug ?? team.id}`}
+      className="flex flex-col items-center gap-2 text-center rounded-lg p-2 -m-2 hover:bg-surface-2 transition-colors"
+    >
+      <TeamBadge name={team.name} logoUrl={team.logoUrl} size="lg" />
+      <span className="text-sm font-medium">{team.name}</span>
+    </Link>
+  );
+}
 
 export function ScoreHeader({ match }: { match: ApiMatch }) {
   const hasScore = match.homeScore !== null && match.awayScore !== null;
@@ -14,10 +27,7 @@ export function ScoreHeader({ match }: { match: ApiMatch }) {
       </div>
 
       <div className="grid grid-cols-3 items-center gap-4">
-        <div className="flex flex-col items-center gap-2 text-center">
-          <TeamBadge name={match.homeTeam.name} logoUrl={match.homeTeam.logoUrl} size="lg" />
-          <span className="text-sm font-medium">{match.homeTeam.name}</span>
-        </div>
+        <TeamColumn team={match.homeTeam} />
 
         <div className="text-center">
           {hasScore ? (
@@ -33,10 +43,7 @@ export function ScoreHeader({ match }: { match: ApiMatch }) {
           {match.venue && <div className="mt-1 text-xs text-muted">{match.venue}</div>}
         </div>
 
-        <div className="flex flex-col items-center gap-2 text-center">
-          <TeamBadge name={match.awayTeam.name} logoUrl={match.awayTeam.logoUrl} size="lg" />
-          <span className="text-sm font-medium">{match.awayTeam.name}</span>
-        </div>
+        <TeamColumn team={match.awayTeam} />
       </div>
     </div>
   );

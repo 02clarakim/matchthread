@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { matchWithTeams, serializeMatch } from "@/lib/db/match-includes";
 import { ScoreHeader } from "@/components/match/score-header";
 import { EventItem } from "@/components/match/event-item";
+import { LiveNowBoard } from "@/components/match/live-now-board";
 import { buttonClasses } from "@/components/ui/button";
 import type { ApiEvent } from "@/lib/types/api";
 
@@ -21,9 +22,18 @@ const FALLBACK_EVENT: ApiEvent = {
 const FALLBACK_HIGHLIGHT_TITLE = "[Goal] Saka cuts inside and curls it past the keeper! 67'";
 
 export default async function LandingPage() {
-  const match = await prisma.match
-    .findUnique({ where: { externalId: "seed-match-arsenal-chelsea" }, include: matchWithTeams })
-    .catch(() => null);
+  const [match, liveMatches] = await Promise.all([
+    prisma.match
+      .findUnique({ where: { externalId: "seed-match-arsenal-chelsea" }, include: matchWithTeams })
+      .catch(() => null),
+    prisma.match
+      .findMany({
+        where: { status: { in: ["LIVE", "PAUSED"] } },
+        include: matchWithTeams,
+        orderBy: { kickoffAt: "asc" },
+      })
+      .catch(() => []),
+  ]);
 
   const [event, highlight] = match
     ? await Promise.all([
@@ -76,6 +86,17 @@ export default async function LandingPage() {
             Sign in
           </Link>
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          </span>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Live now</h2>
+        </div>
+        <LiveNowBoard initial={liveMatches.map(serializeMatch)} />
       </section>
 
       <section className="space-y-4">

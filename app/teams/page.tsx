@@ -97,7 +97,7 @@ export default async function TeamsPage({
         <Card className="divide-y divide-border">
           {sortedTeams.map((team) => (
             <div key={team.id} className="flex items-center gap-3 p-3">
-              <Link href={`/teams/${team.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+              <Link href={`/teams/${team.slug ?? team.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                 <TeamBadge name={team.name} logoUrl={team.logoUrl} />
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{team.name}</div>

@@ -348,35 +348,10 @@ async function seedLiverpoolVsManUtd() {
   );
 }
 
-async function seedBarcelonaVsRealMadrid() {
-  await upsertMatch({
-    externalId: "seed-match-barcelona-real-madrid",
-    league: LALIGA,
-    homeTeam: TEAMS.barcelona,
-    awayTeam: TEAMS.realMadrid,
-    status: "SCHEDULED",
-    homeScore: null,
-    awayScore: null,
-    minute: null,
-    kickoffAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-    venue: "Spotify Camp Nou",
-  });
-}
-
-async function seedTottenhamVsAstonVilla() {
-  await upsertMatch({
-    externalId: "seed-match-tottenham-aston-villa",
-    league: PL,
-    homeTeam: TEAMS.tottenham,
-    awayTeam: TEAMS.astonVilla,
-    status: "SCHEDULED",
-    homeScore: null,
-    awayScore: null,
-    minute: null,
-    kickoffAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-    venue: "Tottenham Hotspur Stadium",
-  });
-}
+// Placeholder SCHEDULED fixtures (Barcelona–Real Madrid, Tottenham–Aston
+// Villa) used to live here. They're now covered by real ESPN fixtures from
+// `npm run backfill`, so seeding them too produced duplicate/stale cards on
+// the team pages — removed.
 
 /**
  * The specific fixture requested for a live test run: kicks off tomorrow
@@ -538,8 +513,6 @@ async function main() {
   await seedArsenalVsChelsea();
   await seedManCityVsNewcastle();
   await seedLiverpoolVsManUtd();
-  await seedBarcelonaVsRealMadrid();
-  await seedTottenhamVsAstonVilla();
   await seedSevillaVsAtleticoMadrid();
   await seedBayernVsDortmund();
   await seedFullLeagueRosters();

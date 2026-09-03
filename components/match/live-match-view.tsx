@@ -82,8 +82,8 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
     <div className="space-y-6">
       <ScoreHeader match={match} />
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="md:col-span-2">
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
           <CardHeader className="text-sm font-semibold">Match Timeline</CardHeader>
           <CardBody className="divide-y divide-border">
             {sortedEvents.length === 0 ? (

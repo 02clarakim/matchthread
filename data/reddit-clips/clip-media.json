@@ -1,0 +1,13 @@
+{
+  "_comment": "Resolved media destination per Goal Clip post (from fetchlayer scrape_post: `url` + `domain`). v.redd.it posts embed inline via redditmedia; external clip hosts (streamin.link, streamff.pro, …) get a one-click 'Watch' link straight to the video page instead of a nested Reddit card. Add more entries by asking Claude Code to scrape additional posts. Consumed by scripts/backfill.ts --clips.",
+  "posts": {
+    "1w1taym": { "url": "https://v.redd.it/zwmni00cscmh1", "host": "v.redd.it" },
+    "1w1t1am": { "url": "https://streamff.pro/v/5245b8ef", "host": "streamff.pro" },
+    "1w2lby7": { "url": "https://streamin.link/v/b27688eb", "host": "streamin.link" },
+    "1w2lmyb": { "url": "https://streamin.link/v/cbc69b7b", "host": "streamin.link" },
+    "1w2mncf": { "url": "https://streamin.link/v/ae30b0db", "host": "streamin.link" },
+    "1w2mu6a": { "url": "https://streamin.link/v/7fd1f195", "host": "streamin.link" },
+    "1w2n9fb": { "url": "https://v.redd.it/rz9w3mquojmh1", "host": "v.redd.it" },
+    "1w2ngdo": { "url": "https://streamin.link/v/8f03565b", "host": "streamin.link" }
+  }
+}

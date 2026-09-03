@@ -1,0 +1,43 @@
+{
+  "_comment": "r/soccer 'Goal Clip' flair posts for Premier League matchweek 3 (2026-08-28..31). Captured via the fetchlayer MCP tool on 2026-09-03 with per-fixture searches: flair_name:\":n_goal: Goal Clip\" <home> <away>. Flat list — scripts/backfill.ts assigns each clip to an ESPN match by parsing its title, then verifies against the ESPN summary. Regenerate by asking Claude Code to re-scrape.",
+  "league": "eng.1",
+  "label": "Premier League — Matchweek 3",
+  "clips": [
+    { "postId": "1w0zzca", "title": "Crystal Palace 0 - [1] Manchester City - Erling Haaland 17'", "permalink": "/r/soccer/comments/1w0zzca/crystal_palace_0_1_manchester_city_erling_haaland/", "author": "West_Agent4651", "createdAt": "2026-08-28T19:17:26.125Z" },
+    { "postId": "1w11g36", "title": "Crystal Palace 0 - [2] Manchester City - Rayan Cherki 54'", "permalink": "/r/soccer/comments/1w11g36/crystal_palace_0_2_manchester_city_rayan_cherki_54/", "author": "West_Agent4651", "createdAt": "2026-08-28T20:11:50.544Z" },
+    { "postId": "1w11i8u", "title": "Crystal Palace [1] - 2 Manchester City - Gianluigi Donnarumma (own goal) 56'", "permalink": "/r/soccer/comments/1w11i8u/crystal_palace_1_2_manchester_city_gianluigi/", "author": "West_Agent4651", "createdAt": "2026-08-28T20:14:12.608Z" },
+    { "postId": "1w1295v", "title": "Crystal Palace 1 - [4] Manchester City - Erling Haaland 84'", "permalink": "/r/soccer/comments/1w1295v/crystal_palace_1_4_manchester_city_erling_haaland/", "author": "West_Agent4651", "createdAt": "2026-08-28T20:42:44.981Z" },
+
+    { "postId": "1w1klds", "title": "Liverpool 0 - [1] Nottingham - D. Ndoye 24'", "permalink": "/r/soccer/comments/1w1klds/liverpool_0_1_nottingham_d_ndoye_24/", "author": "eliseihado", "createdAt": "2026-08-29T11:55:18.332Z" },
+    { "postId": "1w1lqv7", "title": "Liverpool [1] - 1 Nottingham - A. Isak 60'", "permalink": "/r/soccer/comments/1w1lqv7/liverpool_1_1_nottingham_a_isak_60/", "author": "eliseihado", "createdAt": "2026-08-29T12:50:56.678Z" },
+    { "postId": "1w1lzdh", "title": "Liverpool 1 - [2] Nottingham - M. Gibbs-White penalty 70'", "permalink": "/r/soccer/comments/1w1lzdh/liverpool_1_2_nottingham_m_gibbswhite_penalty_70/", "author": "eliseihado", "createdAt": "2026-08-29T13:01:28.701Z" },
+    { "postId": "1w1m8pr", "title": "Liverpool [2] - 2 Nottingham - Víctor Muñoz 82'", "permalink": "/r/soccer/comments/1w1m8pr/liverpool_2_2_nottingham_v%C3%ADctor_mu%C3%B1oz_82/", "author": "eliseihado", "createdAt": "2026-08-29T13:12:59.011Z" },
+
+    { "postId": "1w1ob5e", "title": "Bournemouth [1] - 0 Everton - A. Scott 41'", "permalink": "/r/soccer/comments/1w1ob5e/bournemouth_1_0_everton_a_scott_41/", "author": "eliseihado", "createdAt": "2026-08-29T14:41:02.820Z" },
+    { "postId": "1w1pzz7", "title": "Bournemouth 1 - [1] Everton - J. Tarkowski 90+1'", "permalink": "/r/soccer/comments/1w1pzz7/bournemouth_1_1_everton_j_tarkowski_901/", "author": "eliseihado", "createdAt": "2026-08-29T15:48:37.695Z" },
+
+    { "postId": "1w1t1am", "title": "Tottenham 0 - [1] Newcastle - Anthony Elanga 62'", "permalink": "/r/soccer/comments/1w1t1am/tottenham_0_1_newcastle_anthony_elanga_62/", "author": "Lazy_Banana_1636", "createdAt": "2026-08-29T17:48:34.025Z" },
+    { "postId": "1w1taym", "title": "Tottenham 0-[2] Newcastle United - Yoane Wissa 72'", "permalink": "/r/soccer/comments/1w1taym/tottenham_02_newcastle_united_yoane_wissa_72/", "author": "xggq", "createdAt": "2026-08-29T17:59:17.224Z" },
+
+    { "postId": "1w2h2ol", "title": "Chelsea [1] - 0 Brighton - Roméo Lavia 4'", "permalink": "/r/soccer/comments/1w2h2ol/chelsea_1_0_brighton_rom%C3%A9o_lavia_4/", "author": "West_Agent4651", "createdAt": "2026-08-30T13:05:36.418Z" },
+    { "postId": "1w2h9yz", "title": "Chelsea [2] - 0 Brighton - Pedro Neto 14'", "permalink": "/r/soccer/comments/1w2h9yz/chelsea_2_0_brighton_pedro_neto_14/", "author": "West_Agent4651", "createdAt": "2026-08-30T13:14:53.126Z" },
+    { "postId": "1w2hp02", "title": "Chelsea [3] - 0 Brighton - Joao Pedro 32'", "permalink": "/r/soccer/comments/1w2hp02/chelsea_3_0_brighton_joao_pedro_32/", "author": "West_Agent4651", "createdAt": "2026-08-30T13:32:53.704Z" },
+    { "postId": "1w2hrzp", "title": "Chelsea 3 - [1] Brighton - Malick Yalcouye 35'", "permalink": "/r/soccer/comments/1w2hrzp/chelsea_3_1_brighton_malick_yalcouye_35/", "author": "West_Agent4651", "createdAt": "2026-08-30T13:36:30.860Z" },
+    { "postId": "1w2iwwb", "title": "Chelsea 3 - [2] Brighton - Joao Pedro (own goal) 63'", "permalink": "/r/soccer/comments/1w2iwwb/chelsea_3_2_brighton_joao_pedro_own_goal_63/", "author": "West_Agent4651", "createdAt": "2026-08-30T14:23:00.994Z" },
+    { "postId": "1w2jpyt", "title": "Chelsea 4 - [3] Brighton - Pascal Gross 90+6'", "permalink": "/r/soccer/comments/1w2jpyt/chelsea_4_3_brighton_pascal_gross_906/", "author": "West_Agent4651", "createdAt": "2026-08-30T14:55:26.363Z" },
+
+    { "postId": "1w2jdzm", "title": "Leeds United [1] - 1 Brentford - Calvert Lewin 79'", "permalink": "/r/soccer/comments/1w2jdzm/leeds_united_1_1_brentford_calvert_lewin_79/", "author": "Pizzagamerboy619", "createdAt": "2026-08-30T14:42:09.171Z" },
+
+    { "postId": "1w2j9ri", "title": "Sunderland [1]-0 Fulham - Wilson Isidor 75'", "permalink": "/r/soccer/comments/1w2j9ri/sunderland_10_fulham_wilson_isidor_75/", "author": "OptimusCloyster", "createdAt": "2026-08-30T14:37:25.516Z" },
+
+    { "postId": "1w2lby7", "title": "Manchester United 0 - [1] Ipswich Town - Leif Davis 29'", "permalink": "/r/soccer/comments/1w2lby7/manchester_united_0_1_ipswich_town_leif_davis_29/", "author": "West_Agent4651", "createdAt": "2026-08-30T15:59:22.366Z" },
+    { "postId": "1w2lmyb", "title": "Manchester United [1] - 1 Ipswich Town - Bruno Fernandes 40'", "permalink": "/r/soccer/comments/1w2lmyb/manchester_united_1_1_ipswich_town_bruno/", "author": "West_Agent4651", "createdAt": "2026-08-30T16:10:42.862Z" },
+    { "postId": "1w2mj2l", "title": "Manchester United [2] - 1 Ipswich Town - Harry Maguire 56'", "permalink": "/r/soccer/comments/1w2mj2l/manchester_united_2_1_ipswich_town_harry_maguire/", "author": "West_Agent4651", "createdAt": "2026-08-30T16:44:53.748Z" },
+    { "postId": "1w2mncf", "title": "Manchester United [3] - 1 Ipswich Town - Bruno Fernandes (penalty) 61'", "permalink": "/r/soccer/comments/1w2mncf/manchester_united_3_1_ipswich_town_bruno/", "author": "West_Agent4651", "createdAt": "2026-08-30T16:49:25.931Z" },
+    { "postId": "1w2mu6a", "title": "Manchester United [4] - 1 Ipswich Town - Bruno Fernandes 68' hat-trick", "permalink": "/r/soccer/comments/1w2mu6a/manchester_united_4_1_ipswich_town_bruno/", "author": "West_Agent4651", "createdAt": "2026-08-30T16:56:45.039Z" },
+    { "postId": "1w2n9fb", "title": "Manchester United [5]-1 Ipswich Town - Bryan Mbeumo 82'", "permalink": "/r/soccer/comments/1w2n9fb/manchester_united_51_ipswich_town_bryan_mbeumo_82/", "author": "xggq", "createdAt": "2026-08-30T17:12:18.498Z" },
+    { "postId": "1w2ngdo", "title": "Manchester United 5 - [2] Ipswich Town - Chuba Akpom 90+1'", "permalink": "/r/soccer/comments/1w2ngdo/manchester_united_5_2_ipswich_town_chuba_akpom_901/", "author": "West_Agent4651", "createdAt": "2026-08-30T17:19:34.312Z" },
+
+    { "postId": "1w3pl4h", "title": "Aston Villa 0 - [1] Arsenal - Bukayo Saka 59'", "permalink": "/r/soccer/comments/1w3pl4h/aston_villa_0_1_arsenal_bukayo_saka_59/", "author": "Lazy_Banana_1636", "createdAt": "2026-08-31T20:17:05.090Z" }
+  ]
+}

@@ -15,6 +15,7 @@ export type MatchWithTeams = Prisma.MatchGetPayload<{ include: typeof matchWithT
 export function serializeMatch(match: MatchWithTeams): ApiMatch {
   return {
     id: match.id,
+    slug: match.slug,
     status: match.status,
     homeScore: match.homeScore,
     awayScore: match.awayScore,

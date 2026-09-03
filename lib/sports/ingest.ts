@@ -5,6 +5,7 @@ import { dedupeKeys, DEDUPE_TTL_SECONDS, cacheKeys } from "../redis/keys";
 import { invalidateCache } from "../redis/cache";
 import { publishRealtimeMessage } from "../redis/pubsub";
 import type { NormalizedEvent, NormalizedLeague, NormalizedMatch, NormalizedTeam } from "./types";
+import { matchSlug, teamProfileSlug } from "./match-slug";
 import { isSocialWorthy, ingestSocialForEvent } from "../../workers/social-ingestion";
 import { attachCommentary } from "../../workers/commentary-worker";
 import type { Match, MatchEvent } from "@prisma/client";
@@ -25,22 +26,49 @@ export async function upsertLeague(league: NormalizedLeague) {
   });
 }
 
+/** teamProfileSlug() with a numeric suffix if that base is taken by a different team. */
+async function uniqueTeamSlug(name: string, externalId: string): Promise<string> {
+  const base = teamProfileSlug(name);
+  for (let i = 0; i < 10; i++) {
+    const candidate = i === 0 ? base : `${base}-${i + 1}`;
+    const clash = await prisma.team.findUnique({ where: { slug: candidate }, select: { externalId: true } });
+    if (!clash || clash.externalId === externalId) return candidate;
+  }
+  return `${base}-${externalId.slice(-4)}`;
+}
+
 export async function upsertTeam(team: NormalizedTeam, leagueId: string | null) {
+  const existing = await prisma.team.findUnique({ where: { externalId: team.externalId }, select: { slug: true } });
+  const slug = existing?.slug ?? (await uniqueTeamSlug(team.name, team.externalId));
+
   return prisma.team.upsert({
     where: { externalId: team.externalId },
     create: {
       externalId: team.externalId,
+      slug,
       name: team.name,
       shortName: team.shortName,
       logoUrl: team.logoUrl,
       leagueId: leagueId ?? undefined,
     },
     update: {
+      slug,
       name: team.name,
       shortName: team.shortName,
       logoUrl: team.logoUrl ?? undefined,
     },
   });
+}
+
+/** matchSlug() with a numeric suffix if that base is already taken by a different match. */
+async function uniqueMatchSlug(home: string, away: string, kickoffAt: Date, externalId: string): Promise<string> {
+  const base = matchSlug(home, away, kickoffAt);
+  for (let i = 0; i < 10; i++) {
+    const candidate = i === 0 ? base : `${base}-${i + 1}`;
+    const clash = await prisma.match.findUnique({ where: { slug: candidate }, select: { externalId: true } });
+    if (!clash || clash.externalId === externalId) return candidate;
+  }
+  return `${base}-${externalId.slice(-4)}`;
 }
 
 /** Upserts league/teams/match, and publishes match_update if score/status/minute changed. */
@@ -53,10 +81,15 @@ export async function upsertMatch(normalized: NormalizedMatch): Promise<Match> {
 
   const existing = await prisma.match.findUnique({ where: { externalId: normalized.externalId } });
 
+  const slug =
+    existing?.slug ??
+    (await uniqueMatchSlug(normalized.homeTeam.name, normalized.awayTeam.name, normalized.kickoffAt, normalized.externalId));
+
   const match = await prisma.match.upsert({
     where: { externalId: normalized.externalId },
     create: {
       externalId: normalized.externalId,
+      slug,
       leagueId: league.id,
       homeTeamId: homeTeam.id,
       awayTeamId: awayTeam.id,
@@ -69,6 +102,7 @@ export async function upsertMatch(normalized: NormalizedMatch): Promise<Match> {
       lastSyncedAt: new Date(),
     },
     update: {
+      slug,
       status: normalized.status,
       homeScore: normalized.homeScore,
       awayScore: normalized.awayScore,

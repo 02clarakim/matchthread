@@ -8,6 +8,7 @@ import type { MatchEventType, MatchStatus, MatchingMethod, SocialMediaType } fro
 
 export interface ApiTeam {
   id: string;
+  slug: string | null;
   externalId: string;
   name: string;
   shortName: string | null;
@@ -22,6 +23,7 @@ export interface ApiLeague {
 
 export interface ApiMatch {
   id: string;
+  slug: string | null;
   status: MatchStatus;
   homeScore: number | null;
   awayScore: number | null;
@@ -56,6 +58,10 @@ export interface ApiHighlight {
     mediaUrl: string | null;
     mediaType: SocialMediaType | null;
     author: string | null;
+    clipUrl?: string | null;
+    clipHost?: string | null;
+    videoUrl?: string | null;
+    posterUrl?: string | null;
   };
   event: { id: string };
 }

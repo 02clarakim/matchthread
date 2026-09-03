@@ -117,7 +117,7 @@ export default async function DashboardPage() {
                   },
                   event: { id: h.eventId },
                 }}
-                matchId={h.event.match.id}
+                matchId={h.event.match.slug ?? h.event.match.id}
                 matchLabel={`${h.event.match.homeTeam.name} vs ${h.event.match.awayTeam.name}`}
               />
             ))}

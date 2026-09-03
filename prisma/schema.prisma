@@ -62,6 +62,8 @@ model League {
 model Team {
   id         String   @id @default(cuid())
   externalId String   @unique
+  /** Human-readable profile URL key, e.g. "tottenham-hotspur". Nullable for rows created before it existed. */
+  slug       String?  @unique
   name       String
   shortName  String?
   logoUrl    String?
@@ -97,6 +99,8 @@ enum MatchStatus {
 model Match {
   id           String      @id @default(cuid())
   externalId   String      @unique
+  /** Human-readable URL key, e.g. "manchester-united-ipswich-083026". Nullable for rows created before it existed. */
+  slug         String?     @unique
   leagueId     String
   homeTeamId   String
   awayTeamId   String
@@ -203,6 +207,12 @@ model SocialPost {
   url        String
   mediaUrl   String?
   mediaType  SocialMediaType?
+  /** Watch page on an external clip host (streamff, streamin, …) — a one-click destination when we can't play inline. Null for native v.redd.it posts. */
+  clipUrl    String?
+  clipHost   String?
+  /** Direct .mp4 resolved from the clip host, playable inline in a <video> tag (see scripts/resolve-clip-media.ts). */
+  videoUrl   String?
+  posterUrl  String?
   createdAt  DateTime
   fetchedAt  DateTime     @default(now())
 

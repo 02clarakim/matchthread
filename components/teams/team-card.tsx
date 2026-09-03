@@ -24,7 +24,7 @@ export function TeamCard({ team }: { team: ApiTeam }) {
 
   return (
     <Link
-      href={`/teams/${team.id}`}
+      href={`/teams/${team.slug ?? team.id}`}
       className="group relative flex items-center gap-3 rounded-xl border border-border bg-surface p-3 hover:border-accent/50 transition-colors"
     >
       <TeamBadge name={team.name} logoUrl={team.logoUrl} />

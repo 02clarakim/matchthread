@@ -1,3 +1,5 @@
+"use client";
+
 import { initials } from "@/lib/match-format";
 import { cn } from "@/lib/utils";
 
