@@ -2,25 +2,38 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db/prisma";
 import { TeamBadge } from "@/components/teams/team-badge";
+import { LeaguePill } from "@/components/teams/league-pill";
 import { FavoriteButton } from "@/components/teams/favorite-button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { buttonClasses } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { LEAGUE_ORDER, leagueColorClasses, leagueSortIndex } from "@/lib/league-format";
+
+function filterHref(league: string | null, q: string | undefined) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (league) params.set("league", league);
+  const qs = params.toString();
+  return `/teams${qs ? `?${qs}` : ""}`;
+}
 
 export default async function TeamsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; league?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, league } = await searchParams;
   const session = await auth();
 
   const [teams, favoriteTeamIds] = await Promise.all([
     prisma.team.findMany({
-      where: q ? { name: { contains: q, mode: "insensitive" } } : undefined,
+      where: {
+        ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
+        ...(league ? { league: { name: league } } : {}),
+      },
       include: { league: true },
-      orderBy: { name: "asc" },
-      take: 50,
+      take: 100,
     }),
     session?.user?.id
       ? prisma.userFavoriteTeam
@@ -29,11 +42,45 @@ export default async function TeamsPage({
       : Promise.resolve(new Set<string>()),
   ]);
 
+  // Premier League -> La Liga -> Bundesliga, alphabetical within each league.
+  const sortedTeams = [...teams].sort((a, b) => {
+    const leagueDiff = leagueSortIndex(a.league?.name ?? "") - leagueSortIndex(b.league?.name ?? "");
+    return leagueDiff !== 0 ? leagueDiff : a.name.localeCompare(b.name);
+  });
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold mb-4">Find teams to follow</h1>
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold">Find teams to follow</h1>
+
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={filterHref(null, q)}
+            className={cn(
+              "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-opacity",
+              "bg-surface-2 text-foreground border-border",
+              !league ? "opacity-100 ring-1 ring-accent" : "opacity-60 hover:opacity-100"
+            )}
+          >
+            All
+          </Link>
+          {LEAGUE_ORDER.map((name) => (
+            <Link
+              key={name}
+              href={filterHref(name, q)}
+              className={cn(
+                "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-opacity",
+                leagueColorClasses(name),
+                league === name ? "opacity-100 ring-1 ring-accent" : "opacity-60 hover:opacity-100"
+              )}
+            >
+              {name}
+            </Link>
+          ))}
+        </div>
+
         <form action="/teams" method="GET">
+          <input type="hidden" name="league" value={league ?? ""} />
           <input
             type="text"
             name="q"
@@ -44,17 +91,21 @@ export default async function TeamsPage({
         </form>
       </div>
 
-      {teams.length === 0 ? (
+      {sortedTeams.length === 0 ? (
         <EmptyState icon="🔍">No teams found{q ? ` for "${q}"` : ""}.</EmptyState>
       ) : (
         <Card className="divide-y divide-border">
-          {teams.map((team) => (
+          {sortedTeams.map((team) => (
             <div key={team.id} className="flex items-center gap-3 p-3">
               <Link href={`/teams/${team.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                 <TeamBadge name={team.name} logoUrl={team.logoUrl} />
                 <div className="min-w-0">
                   <div className="text-sm font-medium truncate">{team.name}</div>
-                  {team.league && <div className="text-xs text-muted truncate">{team.league.name}</div>}
+                  {team.league && (
+                    <div className="mt-0.5">
+                      <LeaguePill name={team.league.name} />
+                    </div>
+                  )}
                 </div>
               </Link>
               {session?.user?.id ? (
