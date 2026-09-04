@@ -14,6 +14,7 @@
     "backfill": "tsx scripts/backfill.ts",
     "backfill:logos": "tsx scripts/backfill-team-logos.ts",
     "resolve-clips": "tsx scripts/resolve-clip-media.ts",
+    "dedupe-events": "tsx scripts/dedupe-events.ts",
     "simulate-event": "tsx scripts/simulate-event.ts",
     "ws-server": "tsx workers/ws-server.ts",
     "worker:sports-poller": "tsx workers/sports-poller.ts",

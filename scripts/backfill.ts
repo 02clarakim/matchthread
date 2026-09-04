@@ -143,8 +143,10 @@ async function main() {
             if (!attachable || !gv.clip) continue;
             const eventId = goalEventIdByExternalId.get(goalExternalId(sb.espnEventId, gv.espn));
             if (!eventId) continue;
-            await attachClip(m.matchId, eventId, gv.clip, clipMedia[gv.clip.postId]);
-            attached += 1;
+            for (const clip of [gv.clip, ...gv.extraClips]) {
+              await attachClip(m.matchId, eventId, clip, clipMedia[clip.postId]);
+              attached += 1;
+            }
           }
           tally.clipsAttached += attached;
           if (!result.verified) {

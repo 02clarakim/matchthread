@@ -30,6 +30,8 @@ export interface GoalVerification {
   espn: EspnGoal;
   clip: ClipInput | null;
   clipParsed: ParsedGoalClipTitle | null;
+  /** Additional posts for the *same* goal — mirrors / alternate angles. Not phantom goals. */
+  extraClips: ClipInput[];
   status: "verified" | "clip-missing" | "clip-mismatch";
   notes: string[];
 }
@@ -118,10 +120,10 @@ export function verifyGoals(espnGoals: EspnGoal[], clips: ClipInput[]): VerifyRe
         const msg = `${espn.minute}' ESPN scorer "${espn.scorer}" vs Reddit "${nearMiss.parsed.playerName}"`;
         discrepancies.push(msg);
         notes.push(msg);
-        return { espn, clip: nearMiss.clip, clipParsed: nearMiss.parsed, status: "clip-mismatch", notes };
+        return { espn, clip: nearMiss.clip, clipParsed: nearMiss.parsed, extraClips: [], status: "clip-mismatch", notes };
       }
       notes.push(`no Goal Clip post found for ${espn.minute}' ${espn.scorer ?? "goal"}`);
-      return { espn, clip: null, clipParsed: null, status: "clip-missing", notes };
+      return { espn, clip: null, clipParsed: null, extraClips: [], status: "clip-missing", notes };
     }
 
     usedClipIds.add(hit.clip.postId);
@@ -131,8 +133,25 @@ export function verifyGoals(espnGoals: EspnGoal[], clips: ClipInput[]): VerifyRe
     if (hit.parsed?.isPenalty && espn.type !== "PENALTY_GOAL") {
       notes.push("Reddit flags penalty, ESPN does not");
     }
-    return { espn, clip: hit.clip, clipParsed: hit.parsed, status: "verified", notes };
+    return { espn, clip: hit.clip, clipParsed: hit.parsed, extraClips: [], status: "verified", notes };
   });
+
+  // Second pass: an as-yet-unused clip whose scorer + minute still line up
+  // with a goal we already matched is a mirror / alternate angle of that
+  // goal — attach it there. Only a clip that fits NO goal is a phantom.
+  for (const { clip, parsed } of parsedClips) {
+    if (usedClipIds.has(clip.postId) || !parsed) continue;
+    const gv = goals.find(
+      (g) =>
+        g.status === "verified" &&
+        sameScorer(parsed.playerName, g.espn.scorer) &&
+        Math.abs(minuteOf(parsed) - minuteOf(g.espn)) <= 1
+    );
+    if (gv) {
+      usedClipIds.add(clip.postId);
+      gv.extraClips.push(clip);
+    }
+  }
 
   const orphanClips = parsedClips
     .filter(({ clip }) => !usedClipIds.has(clip.postId))

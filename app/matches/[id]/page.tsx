@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import { matchWithTeams, serializeMatch } from "@/lib/db/match-includes";
 import { LiveMatchView } from "@/components/match/live-match-view";
+import { byClipThenScore } from "@/lib/social/clip-rank";
 import type { ApiEvent, ApiHighlight } from "@/lib/types/api";
 
 export default async function MatchPage({ params }: { params: Promise<{ id: string }> }) {
@@ -36,7 +37,8 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
     commentary: e.commentary,
   }));
 
-  const apiHighlights: ApiHighlight[] = highlightRows.map((h) => ({
+  const apiHighlights: ApiHighlight[] = highlightRows
+    .map((h) => ({
     id: h.id,
     score: h.score,
     matchingMethod: h.matchingMethod,
@@ -53,7 +55,9 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
       posterUrl: h.socialPost.posterUrl,
     },
     event: { id: h.eventId },
-  }));
+    }))
+    // A goal's own clip first, mirrors/link-outs after — see lib/social/clip-rank.
+    .sort(byClipThenScore);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">

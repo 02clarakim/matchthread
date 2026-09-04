@@ -7,6 +7,7 @@ import type { ApiEvent, ApiHighlight, ApiMatch } from "@/lib/types/api";
 import { ScoreHeader } from "@/components/match/score-header";
 import { EventItem } from "@/components/match/event-item";
 import { HighlightList } from "@/components/social/highlight-list";
+import { byClipThenScore } from "@/lib/social/clip-rank";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 
@@ -67,7 +68,7 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
         };
         setHighlights((prev) => {
           const withoutDuplicate = prev.filter((h) => h.id !== highlight.id);
-          return [highlight, ...withoutDuplicate].sort((a, b) => b.score - a.score);
+          return [highlight, ...withoutDuplicate].sort(byClipThenScore);
         });
         break;
       }

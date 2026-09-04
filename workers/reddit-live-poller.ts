@@ -13,7 +13,7 @@ import {
 import { extractMedia } from "../lib/reddit/provider";
 import type { RedditPost } from "../lib/reddit/client";
 import type { MatchEventType } from "@prisma/client";
-import { upsertMatch, ingestNormalizedEvent } from "../lib/sports/ingest";
+import { upsertMatch, ingestNormalizedEvent, findEquivalentEvent } from "../lib/sports/ingest";
 import { toNormalizedMatch, matchWithTeams, type MatchWithTeams } from "../lib/db/match-includes";
 import { publishRealtimeMessage } from "../lib/redis/pubsub";
 import { invalidateCache } from "../lib/redis/cache";
@@ -129,27 +129,37 @@ async function handleDetectedPost(
   const team = side === "home" ? match.homeTeam : match.awayTeam;
   const matchEventType: MatchEventType = eventType === "GOAL" && isPenalty ? "PENALTY_GOAL" : eventType;
 
-  let nextScore = currentScore;
+  // A different post — a mirror / alternate angle — for a goal already on
+  // the timeline (this poller, or the ESPN poller). Attach the extra clip
+  // to that event; do NOT create a second event or re-increment the score.
+  const alreadyRecorded = await findEquivalentEvent(match.id, matchEventType, team.id, minute, extraMinute, playerName);
 
-  if (eventType === "GOAL") {
-    const homeScore = side === "home" ? (currentScore.homeScore ?? 0) + 1 : currentScore.homeScore;
-    const awayScore = side === "away" ? (currentScore.awayScore ?? 0) + 1 : currentScore.awayScore;
-    const updated = await upsertMatch(toNormalizedMatch(match, { status: "LIVE", homeScore, awayScore, minute }));
-    nextScore = { homeScore: updated.homeScore, awayScore: updated.awayScore };
+  let nextScore = currentScore;
+  let event = alreadyRecorded;
+
+  if (!event) {
+    if (eventType === "GOAL") {
+      const homeScore = side === "home" ? (currentScore.homeScore ?? 0) + 1 : currentScore.homeScore;
+      const awayScore = side === "away" ? (currentScore.awayScore ?? 0) + 1 : currentScore.awayScore;
+      const updated = await upsertMatch(toNormalizedMatch(match, { status: "LIVE", homeScore, awayScore, minute }));
+      nextScore = { homeScore: updated.homeScore, awayScore: updated.awayScore };
+    }
+
+    ({ event } = await ingestNormalizedEvent(match.id, {
+      externalId,
+      type: matchEventType,
+      detail: null,
+      minute,
+      extraMinute,
+      teamExternalId: team.externalId,
+      playerId: null,
+      playerName,
+      assistName: null,
+      timestamp: new Date(post.created_utc * 1000),
+    }));
   }
 
-  const { event } = await ingestNormalizedEvent(match.id, {
-    externalId,
-    type: matchEventType,
-    detail: null,
-    minute,
-    extraMinute,
-    teamExternalId: team.externalId,
-    playerId: null,
-    playerName,
-    assistName: null,
-    timestamp: new Date(post.created_utc * 1000),
-  });
+  if (!event) return nextScore;
 
   const { mediaUrl, mediaType } = extractMedia(post);
   const socialPost = await prisma.socialPost.upsert({

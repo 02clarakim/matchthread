@@ -89,6 +89,19 @@ describe("verifyGoals", () => {
     expect(result.verified).toBe(true); // a gap is not a contradiction
   });
 
+  it("treats a second post for the same goal as a mirror, not an orphan", () => {
+    const clips = [
+      clip({ postId: "m1", title: "Tottenham 0 - [1] Newcastle - Anthony Elanga 62'" }),
+      clip({ postId: "m2", title: "Tottenham 0-[1] Newcastle - A. Elanga 63' (better angle)" }),
+    ];
+    const result = verifyGoals([ESPN_GOALS[0]], clips);
+
+    expect(result.verified).toBe(true);
+    expect(result.orphanClips).toHaveLength(0);
+    expect(result.goals[0].clip?.postId).toBe("m1");
+    expect(result.goals[0].extraClips.map((c) => c.postId)).toEqual(["m2"]);
+  });
+
   it("fails verification on an orphan clip — Reddit asserting a goal ESPN doesn't list", () => {
     const clips = [
       clip({ postId: "d", title: "Tottenham 0 - [1] Newcastle - Anthony Elanga 62'" }),

@@ -46,7 +46,7 @@ function fixtureEvent(): NormalizedEvent {
 describe("event ingestion idempotency (real Postgres)", () => {
   afterAll(async () => {
     await waitForPendingBackgroundWork();
-    await prisma.match.deleteMany({ where: { externalId: `test-match-${suffix}` } });
+    await prisma.match.deleteMany({ where: { externalId: { contains: suffix } } });
     await prisma.team.deleteMany({ where: { externalId: { in: [`test-home-${suffix}`, `test-away-${suffix}`] } } });
     await prisma.league.deleteMany({ where: { externalId: `test-league-${suffix}` } });
   });
@@ -65,6 +65,58 @@ describe("event ingestion idempotency (real Postgres)", () => {
       where: { matchId: match.id, externalId: `test-event-${suffix}` },
     });
     expect(rows).toHaveLength(1);
+  });
+
+  it("the same goal from a different source / externalId is deduped, not doubled", async () => {
+    const match = await upsertMatch({ ...fixtureMatch(), externalId: `test-match-b-${suffix}` });
+
+    // Same goal (30', same scorer), re-ingested by another source under a
+    // different externalId scheme, with the name written slightly differently.
+    const espn = await ingestNormalizedEvent(match.id, {
+      ...fixtureEvent(),
+      externalId: `espn-${suffix}-goal-30-watkins`,
+      minute: 30,
+      playerName: "Ollie Watkins",
+    });
+    const mirror = await ingestNormalizedEvent(match.id, {
+      ...fixtureEvent(),
+      externalId: `reddit-abc123-${suffix}`,
+      minute: 30,
+      playerName: "O. Watkins",
+    });
+
+    expect(mirror.isNew).toBe(false);
+    expect(mirror.event.id).toBe(espn.event.id);
+
+    const goals = await prisma.matchEvent.findMany({ where: { matchId: match.id, type: "GOAL" } });
+    expect(goals).toHaveLength(1);
+
+    await prisma.matchEvent.deleteMany({ where: { matchId: match.id } });
+    await prisma.match.delete({ where: { id: match.id } });
+  });
+
+  it("keeps a quick brace — same player scoring again a minute later — as two goals", async () => {
+    const match = await upsertMatch({ ...fixtureMatch(), externalId: `test-match-c-${suffix}` });
+
+    await ingestNormalizedEvent(match.id, {
+      ...fixtureEvent(),
+      externalId: `g1-${suffix}`,
+      minute: 30,
+      playerName: "Jack Hinshelwood",
+    });
+    const second = await ingestNormalizedEvent(match.id, {
+      ...fixtureEvent(),
+      externalId: `g2-${suffix}`,
+      minute: 31,
+      playerName: "Jack Hinshelwood",
+    });
+
+    expect(second.isNew).toBe(true);
+    const goals = await prisma.matchEvent.findMany({ where: { matchId: match.id, type: "GOAL" } });
+    expect(goals).toHaveLength(2);
+
+    await prisma.matchEvent.deleteMany({ where: { matchId: match.id } });
+    await prisma.match.delete({ where: { id: match.id } });
   });
 
   it("upserting the same match externalId twice does not create a duplicate match", async () => {
