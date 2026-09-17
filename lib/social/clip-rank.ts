@@ -14,7 +14,10 @@ type Clip = ApiHighlight["socialPost"];
  *  3  image, or nothing playable
  */
 export function clipRank(sp: Clip): number {
-  if (sp.mediaType === "VIDEO" && sp.mediaUrl?.includes("redditmedia.com") && !sp.clipUrl) return 0;
+  const nativeReddit =
+    sp.clipHost === "v.redd.it" ||
+    (sp.mediaType === "VIDEO" && Boolean(sp.mediaUrl?.includes("redditmedia.com")) && !sp.clipUrl && !sp.clipHost);
+  if (nativeReddit) return 0;
   if (sp.videoUrl) return 1;
   if (sp.clipUrl) return 2;
   return 3;

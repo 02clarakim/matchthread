@@ -50,10 +50,11 @@ export async function resolveClip(clipUrl: string): Promise<ResolvedClip | null>
   const html = await res.text();
   const id = finalUrl.match(/\/v\/([A-Za-z0-9_-]+)/)?.[1] ?? clipUrl.match(/\/v\/([A-Za-z0-9_-]+)/)?.[1] ?? null;
 
-  // streamff family: og:video is self-referential; the real file + poster
-  // sit on cdn.hostedhost.top keyed by the clip id.
+  // streamff family: og:video is self-referential; the real file sits on
+  // cdn.hostedhost.top keyed by the clip id. (Its .jpg poster 404s, so
+  // none — the player falls back to the video's own first frame.)
   if (/streamff\.|hostedhost\.top/i.test(finalUrl) || /streamff/i.test(clipUrl)) {
-    if (id) return { videoUrl: `https://cdn.hostedhost.top/${id}.mp4`, posterUrl: `https://cdn.hostedhost.top/${id}.jpg` };
+    if (id) return { videoUrl: `https://cdn.hostedhost.top/${id}.mp4`, posterUrl: null };
   }
 
   // streamin family + generic: trust og:video / <source>.
