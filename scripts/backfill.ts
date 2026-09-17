@@ -85,7 +85,7 @@ async function main() {
   logger.info("backfill_started", { leagues: leagues.join(","), dates, withClips, dryRun });
 
   let summaryBudget = summaryCap;
-  const tally = { matches: 0, scheduled: 0, finished: 0, goals: 0, cards: 0, clipsAttached: 0, clipFailures: 0 };
+  const tally = { matches: 0, scheduled: 0, finished: 0, goals: 0, cards: 0, subs: 0, vars: 0, clipsAttached: 0, clipFailures: 0 };
 
   for (const league of leagues) {
     const fixtures = (await fetchEspnScoreboard(league, dates)).filter(isLeagueFixture);
@@ -120,7 +120,7 @@ async function main() {
       summaryBudget -= 1;
 
       const summary = await fetchEspnMatch(sb.espnEventId, league);
-      const { goalEventIdByExternalId, goalCount, cardCount } = await ingestEspnMatchDetail(
+      const { goalEventIdByExternalId, goalCount, cardCount, subCount, varCount } = await ingestEspnMatchDetail(
         m.matchId,
         sb.espnEventId,
         summary,
@@ -128,6 +128,8 @@ async function main() {
       );
       tally.goals += goalCount;
       tally.cards += cardCount;
+      tally.subs += subCount;
+      tally.vars += varCount;
 
       let clipNote = "";
       if (withClips && leagueClips.length && sb.status === "FINISHED") {
@@ -158,7 +160,7 @@ async function main() {
         }
       }
 
-      console.log(`  · ${line}   [${goalCount}g ${cardCount}c]${clipNote}`);
+      console.log(`  · ${line}   [${goalCount}g ${cardCount}c ${subCount}s ${varCount}v]${clipNote}`);
       await sleep(120);
     }
   }
@@ -166,7 +168,7 @@ async function main() {
   if (!dryRun) await waitForPendingBackgroundWork();
   console.log(
     `\ndone — ${tally.matches} matches (${tally.finished} finished, ${tally.scheduled} upcoming), ` +
-      `${tally.goals} goals, ${tally.cards} cards, ${tally.clipsAttached} clips attached` +
+      `${tally.goals} goals, ${tally.cards} cards, ${tally.subs} subs, ${tally.vars} VAR, ${tally.clipsAttached} clips attached` +
       (tally.clipFailures ? `, ${tally.clipFailures} matches with unverified clips` : "") +
       `\n`
   );

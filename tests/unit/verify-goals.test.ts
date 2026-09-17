@@ -3,8 +3,8 @@ import { verifyGoals, clipsForMatch, type ClipInput } from "@/lib/matching/verif
 import type { EspnGoal } from "@/lib/sports/espn";
 
 const ESPN_GOALS: EspnGoal[] = [
-  { minute: 62, extraMinute: null, scorer: "Anthony Elanga", assist: "Amar Dedic", teamEspnId: "361", teamName: "Newcastle United", type: "GOAL" },
-  { minute: 72, extraMinute: null, scorer: "Yoane Wissa", assist: "Nick Woltemade", teamEspnId: "361", teamName: "Newcastle United", type: "GOAL" },
+  { minute: 62, extraMinute: null, scorer: "Anthony Elanga", assist: "Amar Dedic", teamEspnId: "361", teamName: "Newcastle United", type: "GOAL", sourceText: null },
+  { minute: 72, extraMinute: null, scorer: "Yoane Wissa", assist: "Nick Woltemade", teamEspnId: "361", teamName: "Newcastle United", type: "GOAL", sourceText: null },
 ];
 
 function clip(over: Partial<ClipInput>): ClipInput {

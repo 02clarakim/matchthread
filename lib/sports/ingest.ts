@@ -243,9 +243,10 @@ export async function ingestNormalizedEvent(
     normalized.playerName
   );
   if (equivalent) {
-    const patch: { playerName?: string; extraMinute?: number } = {};
+    const patch: { playerName?: string; extraMinute?: number; sourceText?: string } = {};
     if (!equivalent.playerName && normalized.playerName) patch.playerName = normalized.playerName;
     if (equivalent.extraMinute === null && normalized.extraMinute !== null) patch.extraMinute = normalized.extraMinute;
+    if (!equivalent.sourceText && normalized.sourceText) patch.sourceText = normalized.sourceText;
     const event = Object.keys(patch).length
       ? await prisma.matchEvent.update({ where: { id: equivalent.id }, data: patch })
       : equivalent;
@@ -274,6 +275,7 @@ export async function ingestNormalizedEvent(
         playerName: normalized.playerName,
         assistName: normalized.assistName,
         timestamp: normalized.timestamp,
+        sourceText: normalized.sourceText ?? null,
       },
     });
     isNew = true;

@@ -148,6 +148,7 @@ enum MatchEventType {
 enum CommentarySource {
   SPORTS_API
   FOTMOB
+  LLM
   GENERATED
 }
 
@@ -164,6 +165,9 @@ model MatchEvent {
   playerName     String?
   assistName     String?
   timestamp      DateTime       @default(now())
+
+  /** Raw grounding sentence from the data source (ESPN's own play-by-play text) — facts for the LLM commentary provider to draw on, never shown to users verbatim. */
+  sourceText String?
 
   commentary          String?
   commentarySource    CommentarySource?

@@ -77,7 +77,7 @@ async function processFixture(resolver: EspnResolver, sb: EspnScoreboardMatch): 
     summarySeen.add(summaryKey);
     try {
       const summary = await fetchEspnMatch(sb.espnEventId, sb.league);
-      const { goalCount, cardCount } = await ingestEspnMatchDetail(
+      const { goalCount, cardCount, subCount, varCount } = await ingestEspnMatchDetail(
         m.matchId,
         sb.espnEventId,
         summary,
@@ -88,6 +88,8 @@ async function processFixture(resolver: EspnResolver, sb: EspnScoreboardMatch): 
         trigger: sb.status,
         goals: goalCount,
         cards: cardCount,
+        subs: subCount,
+        vars: varCount,
       });
     } catch (err) {
       summarySeen.delete(summaryKey); // let a transient failure retry next cycle

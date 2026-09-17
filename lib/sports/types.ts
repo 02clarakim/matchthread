@@ -39,6 +39,8 @@ export interface NormalizedEvent {
   playerName: string | null;
   assistName: string | null;
   timestamp: Date;
+  /** Raw grounding text from the source (e.g. ESPN's play-by-play sentence) for the LLM commentary provider — never displayed directly. */
+  sourceText?: string | null;
 }
 
 export interface MatchWithEvents {

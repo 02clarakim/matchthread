@@ -69,6 +69,11 @@ describe("normalizeEspnSummary", () => {
     });
   });
 
+  it("carries ESPN's own play-by-play sentence as sourceText, for the LLM provider to draw facts from", () => {
+    expect(match.goals[0].sourceText).toMatch(/Anthony Elanga.*left footed shot/);
+    expect(match.cards[0].sourceText).toMatch(/Micky van de Ven.*yellow card/);
+  });
+
   it("extracts bookings as cards, not goals", () => {
     expect(match.cards.length).toBeGreaterThanOrEqual(3);
     expect(match.cards.every((c) => c.type === "YELLOW_CARD")).toBe(true);
@@ -78,5 +83,21 @@ describe("normalizeEspnSummary", () => {
 
   it("does not pick up cards, subs, or period markers as goals", () => {
     expect(match.goals.every((g) => g.scorer)).toBe(true);
+  });
+
+  it("extracts substitutions with the incoming player first, outgoing second, matching ESPN's own wording", () => {
+    expect(match.substitutions.length).toBeGreaterThanOrEqual(1);
+    const first = match.substitutions.find((s) => s.playerOn === "Mikey Moore");
+    expect(first).toMatchObject({
+      minute: 68,
+      playerOn: "Mikey Moore",
+      playerOff: "Archie Gray",
+      teamName: "Tottenham Hotspur",
+    });
+    expect(first?.sourceText).toBe("Substitution, Tottenham Hotspur. Mikey Moore replaces Archie Gray.");
+  });
+
+  it("finds no VAR incidents in a match that didn't have one (best-effort, not guaranteed)", () => {
+    expect(match.varEvents).toEqual([]);
   });
 });

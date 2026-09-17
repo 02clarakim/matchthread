@@ -1,7 +1,12 @@
 import type { MatchEventType } from "@prisma/client";
+import { prisma } from "../db/prisma";
+import { invalidateCache } from "../redis/cache";
+import { cacheKeys } from "../redis/keys";
+import { publishRealtimeMessage } from "../redis/pubsub";
+import { logger } from "../logger";
 import { ingestNormalizedEvent, upsertMatch } from "./ingest";
 import { EspnResolver } from "./espn-resolve";
-import type { EspnCard, EspnGoal, EspnMatch, EspnScoreboardMatch } from "./espn";
+import type { EspnCard, EspnGoal, EspnMatch, EspnScoreboardMatch, EspnSubstitution, EspnVarEvent } from "./espn";
 import type { NormalizedMatch } from "./types";
 
 /**
@@ -33,6 +38,14 @@ export function goalExternalId(espnEventId: string, g: EspnGoal): string {
 
 export function cardExternalId(espnEventId: string, c: EspnCard): string {
   return `espn-${espnEventId}-card-${clockKey(c.minute, c.extraMinute)}-${slug(c.player)}`;
+}
+
+export function subExternalId(espnEventId: string, s: EspnSubstitution): string {
+  return `espn-${espnEventId}-sub-${clockKey(s.minute, s.extraMinute)}-${slug(s.playerOn)}`;
+}
+
+export function varExternalId(espnEventId: string, v: EspnVarEvent): string {
+  return `espn-${espnEventId}-var-${clockKey(v.minute, v.extraMinute)}-${slug(v.player)}`;
 }
 
 export interface UpsertMatchResult {
@@ -78,17 +91,65 @@ export async function upsertEspnMatch(
 }
 
 /**
- * Ingests every goal + card from an ESPN summary into an already-upserted
- * match. Returns a map from each goal's externalId to the created/existing
- * MatchEvent id, so a caller (the backfill) can attach a clip to it.
+ * ESPN's *scoreboard* endpoint (fetchEspnScoreboard, used by upsertEspnMatch)
+ * can return a stale per-match score when queried as part of a wide
+ * multi-week date range — observed live: a match's status correctly flips
+ * to FINISHED while its score field still reflects an earlier, cached
+ * snapshot from before the match kicked off. The single-event *summary*
+ * endpoint (fetchEspnMatch) doesn't share that cache, so whenever we fetch
+ * it anyway — for goals/cards/subs — reconcile the match's score against
+ * it too, rather than trusting the scoreboard's score alone.
+ */
+export async function reconcileMatchScore(matchId: string, summary: Pick<EspnMatch, "home" | "away">): Promise<void> {
+  const match = await prisma.match.findUnique({ where: { id: matchId } });
+  if (!match) return;
+  if (match.homeScore === summary.home.score && match.awayScore === summary.away.score) return;
+
+  const updated = await prisma.match.update({
+    where: { id: matchId },
+    data: { homeScore: summary.home.score, awayScore: summary.away.score },
+  });
+  await invalidateCache(cacheKeys.matchDetail(matchId));
+  await publishRealtimeMessage({
+    type: "match_update",
+    matchId,
+    teamIds: [updated.homeTeamId, updated.awayTeamId],
+    status: updated.status,
+    homeScore: updated.homeScore,
+    awayScore: updated.awayScore,
+    minute: updated.minute,
+  });
+  logger.info("espn_match_score_reconciled", {
+    matchId,
+    from: `${match.homeScore}-${match.awayScore}`,
+    to: `${updated.homeScore}-${updated.awayScore}`,
+  });
+}
+
+/**
+ * Ingests every goal, card, substitution, and VAR incident from an ESPN
+ * summary into an already-upserted match. Returns a map from each goal's
+ * externalId to the created/existing MatchEvent id, so a caller (the
+ * backfill) can attach a clip to it. Each event's `sourceText` carries
+ * ESPN's own play-by-play sentence as grounding for the LLM commentary
+ * provider (lib/commentary/llm-provider.ts) — never shown verbatim.
  */
 export async function ingestEspnMatchDetail(
   matchId: string,
   espnEventId: string,
-  summary: Pick<EspnMatch, "goals" | "cards" | "kickoffAt">,
+  summary: Pick<EspnMatch, "home" | "away" | "goals" | "cards" | "substitutions" | "varEvents" | "kickoffAt">,
   teamExternalIdByEspnId: Map<string, string>
-): Promise<{ goalEventIdByExternalId: Map<string, string>; goalCount: number; cardCount: number }> {
+): Promise<{
+  goalEventIdByExternalId: Map<string, string>;
+  goalCount: number;
+  cardCount: number;
+  subCount: number;
+  varCount: number;
+}> {
+  await reconcileMatchScore(matchId, summary);
+
   const goalEventIdByExternalId = new Map<string, string>();
+  const at = (minute: number) => new Date(summary.kickoffAt.getTime() + minute * 60_000);
 
   for (const g of summary.goals) {
     const externalId = goalExternalId(espnEventId, g);
@@ -102,7 +163,8 @@ export async function ingestEspnMatchDetail(
       playerId: null,
       playerName: g.scorer,
       assistName: g.assist,
-      timestamp: new Date(summary.kickoffAt.getTime() + g.minute * 60_000),
+      timestamp: at(g.minute),
+      sourceText: g.sourceText,
     });
     goalEventIdByExternalId.set(externalId, event.id);
   }
@@ -118,9 +180,48 @@ export async function ingestEspnMatchDetail(
       playerId: null,
       playerName: c.player,
       assistName: null,
-      timestamp: new Date(summary.kickoffAt.getTime() + c.minute * 60_000),
+      timestamp: at(c.minute),
+      sourceText: c.sourceText,
     });
   }
 
-  return { goalEventIdByExternalId, goalCount: summary.goals.length, cardCount: summary.cards.length };
+  for (const s of summary.substitutions) {
+    await ingestNormalizedEvent(matchId, {
+      externalId: subExternalId(espnEventId, s),
+      type: "SUBSTITUTION",
+      detail: null,
+      minute: s.minute,
+      extraMinute: s.extraMinute,
+      teamExternalId: teamExternalIdByEspnId.get(s.teamEspnId) ?? null,
+      playerId: null,
+      playerName: s.playerOn,
+      assistName: s.playerOff,
+      timestamp: at(s.minute),
+      sourceText: s.sourceText,
+    });
+  }
+
+  for (const v of summary.varEvents) {
+    await ingestNormalizedEvent(matchId, {
+      externalId: varExternalId(espnEventId, v),
+      type: "VAR_DECISION",
+      detail: null,
+      minute: v.minute,
+      extraMinute: v.extraMinute,
+      teamExternalId: teamExternalIdByEspnId.get(v.teamEspnId) ?? null,
+      playerId: null,
+      playerName: v.player,
+      assistName: null,
+      timestamp: at(v.minute),
+      sourceText: v.sourceText,
+    });
+  }
+
+  return {
+    goalEventIdByExternalId,
+    goalCount: summary.goals.length,
+    cardCount: summary.cards.length,
+    subCount: summary.substitutions.length,
+    varCount: summary.varEvents.length,
+  };
 }

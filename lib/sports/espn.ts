@@ -234,6 +234,8 @@ export interface EspnGoal {
   teamEspnId: string;
   teamName: string;
   type: Extract<MatchEventType, "GOAL" | "PENALTY_GOAL" | "OWN_GOAL">;
+  /** ESPN's own play-by-play sentence for this moment — grounding for the LLM commentary provider, never shown verbatim. */
+  sourceText: string | null;
 }
 
 export interface EspnCard {
@@ -243,6 +245,28 @@ export interface EspnCard {
   teamEspnId: string;
   teamName: string;
   type: Extract<MatchEventType, "YELLOW_CARD" | "RED_CARD" | "SECOND_YELLOW_CARD">;
+  sourceText: string | null;
+}
+
+export interface EspnSubstitution {
+  minute: number;
+  extraMinute: number | null;
+  /** Player coming on. */
+  playerOn: string | null;
+  /** Player coming off. */
+  playerOff: string | null;
+  teamEspnId: string;
+  teamName: string;
+  sourceText: string | null;
+}
+
+export interface EspnVarEvent {
+  minute: number;
+  extraMinute: number | null;
+  player: string | null;
+  teamEspnId: string;
+  teamName: string;
+  sourceText: string | null;
 }
 
 export interface EspnMatch {
@@ -256,6 +280,8 @@ export interface EspnMatch {
   away: { espnId: string; name: string; abbreviation: string | null; score: number };
   goals: EspnGoal[];
   cards: EspnCard[];
+  substitutions: EspnSubstitution[];
+  varEvents: EspnVarEvent[];
 }
 
 interface EspnCompetitor {
@@ -271,6 +297,7 @@ interface EspnKeyEvent {
   type?: { text?: string };
   team?: { id: string; displayName: string };
   participants?: Array<{ athlete?: { displayName?: string } }>;
+  /** ESPN's play-by-play sentence for this moment, e.g. "Goal! ... left footed shot ... Assisted by ... with a headed pass." */
   text?: string;
 }
 
@@ -313,6 +340,10 @@ function cardTypeFromText(text: string): EspnCard["type"] | null {
   return null;
 }
 
+function isVarText(text: string): boolean {
+  return /\bvar\b|video (assistant )?referee|video review/i.test(text);
+}
+
 function extractGoals(keyEvents: EspnKeyEvent[]): EspnGoal[] {
   const goals: EspnGoal[] = [];
   for (const e of keyEvents) {
@@ -328,6 +359,7 @@ function extractGoals(keyEvents: EspnKeyEvent[]): EspnGoal[] {
       teamEspnId: e.team.id,
       teamName: e.team.displayName,
       type: goalTypeFromText(e.type?.text),
+      sourceText: e.text ?? null,
     });
   }
   return goals.sort(byClock);
@@ -348,9 +380,56 @@ function extractCards(keyEvents: EspnKeyEvent[]): EspnCard[] {
       teamEspnId: e.team.id,
       teamName: e.team.displayName,
       type,
+      sourceText: e.text ?? null,
     });
   }
   return cards.sort(byClock);
+}
+
+/** ESPN lists a sub as "Player On" then "Player Off" in participants, matching the text: "X replaces Y." */
+function extractSubstitutions(keyEvents: EspnKeyEvent[]): EspnSubstitution[] {
+  const subs: EspnSubstitution[] = [];
+  for (const e of keyEvents) {
+    if (!e.team || !/substitution/i.test(e.type?.text ?? "")) continue;
+    const clock = parseEspnClock(e.clock?.displayValue);
+    if (!clock) continue;
+    subs.push({
+      minute: clock.minute,
+      extraMinute: clock.extraMinute,
+      playerOn: e.participants?.[0]?.athlete?.displayName ?? null,
+      playerOff: e.participants?.[1]?.athlete?.displayName ?? null,
+      teamEspnId: e.team.id,
+      teamName: e.team.displayName,
+      sourceText: e.text ?? null,
+    });
+  }
+  return subs.sort(byClock);
+}
+
+/**
+ * VAR reviews aren't a distinct, reliably-labeled keyEvent type in ESPN's
+ * free feed (a confirmed penalty just shows up as "Penalty - Scored", for
+ * example) — this only catches the rarer case where the type text or
+ * commentary explicitly says so. Best-effort, like the rest of this file.
+ */
+function extractVarEvents(keyEvents: EspnKeyEvent[]): EspnVarEvent[] {
+  const events: EspnVarEvent[] = [];
+  for (const e of keyEvents) {
+    if (!e.team) continue;
+    const text = `${e.type?.text ?? ""} ${e.text ?? ""}`;
+    if (!isVarText(text)) continue;
+    const clock = parseEspnClock(e.clock?.displayValue);
+    if (!clock) continue;
+    events.push({
+      minute: clock.minute,
+      extraMinute: clock.extraMinute,
+      player: e.participants?.[0]?.athlete?.displayName ?? null,
+      teamEspnId: e.team.id,
+      teamName: e.team.displayName,
+      sourceText: e.text ?? null,
+    });
+  }
+  return events.sort(byClock);
 }
 
 function byClock(a: { minute: number; extraMinute: number | null }, b: { minute: number; extraMinute: number | null }): number {
@@ -376,6 +455,8 @@ export function normalizeEspnSummary(summary: EspnSummary): EspnMatch {
     away: { espnId: away.team.id, name: away.team.displayName, abbreviation: away.team.abbreviation ?? null, score: Number(away.score) },
     goals: extractGoals(keyEvents),
     cards: extractCards(keyEvents),
+    substitutions: extractSubstitutions(keyEvents),
+    varEvents: extractVarEvents(keyEvents),
   };
 }
 
@@ -392,6 +473,7 @@ export async function fetchEspnMatch(eventId: string, league = "eng.1"): Promise
     score: `${match.home.score}-${match.away.score}`,
     goals: match.goals.length,
     cards: match.cards.length,
+    subs: match.substitutions.length,
     completed: match.completed,
   });
   return match;
