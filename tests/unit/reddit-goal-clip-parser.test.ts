@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseGoalClipTitle, resolveGoalEvent } from "@/lib/reddit/parse-goal-post";
+import { parseGoalClipTitle } from "@/lib/reddit/parse-goal-post";
 
 // Real r/soccer "Goal Clip" post titles. The first four were provided
 // directly by the user; the rest were pulled from a live r/soccer flair
@@ -122,83 +122,6 @@ describe("parseGoalClipTitle (real r/soccer examples)", () => {
       isOwnGoal: true,
       isPenalty: false,
       minute: 44,
-    });
-  });
-});
-
-describe("resolveGoalEvent", () => {
-  it("resolves the scoring side via the bracket convention for a real title", () => {
-    const result = resolveGoalEvent(
-      "Crystal Palace 1 - [4] Manchester City - Erling Haaland 84'",
-      "Crystal Palace",
-      "Manchester City"
-    );
-    expect(result).toEqual({
-      side: "away",
-      playerName: "Erling Haaland",
-      minute: 84,
-      extraMinute: null,
-      isPenalty: false,
-      isOwnGoal: false,
-    });
-  });
-
-  it("maps a Reddit-abbreviated team name onto our tracked team via aliases, regardless of title word order", () => {
-    // "Atleti" is a known alias for Atletico Madrid, not the literal DB
-    // name — and this title happens to list Sevilla first even though
-    // Atletico Madrid is *our* home team, so this also checks that
-    // resolution goes by identity, not by position in the title.
-    const result = resolveGoalEvent(
-      "Sevilla 0-[1] Atleti - Antoine Griezmann 23'",
-      "Atletico Madrid",
-      "Sevilla"
-    );
-    expect(result?.side).toBe("home");
-  });
-
-  it("falls back to score-delta detection when the title has no bracket convention", () => {
-    const result = resolveGoalEvent("Tijuana 2-0 Pumas - Gilberto Mora Penalty 81'", "Tijuana", "Pumas", {
-      homeScore: 1,
-      awayScore: 0,
-    });
-    expect(result?.side).toBe("home");
-    expect(result?.playerName).toBe("Gilberto Mora"); // scorer taken from after the last " - ", annotation stripped
-    expect(result?.isPenalty).toBe(false); // fallback path doesn't extract the penalty flag
-  });
-
-  it("extracts the scorer from the score-line shape in the fallback path (not the leading team text)", () => {
-    const result = resolveGoalEvent("Dundee FC 1-0 St. Johnstone - Charlie Reilly 87'", "Dundee FC", "St. Johnstone", {
-      homeScore: 0,
-      awayScore: 0,
-    });
-    expect(result).toEqual({
-      side: "home",
-      playerName: "Charlie Reilly",
-      minute: 87,
-      extraMinute: null,
-      isPenalty: false,
-      isOwnGoal: false,
-    });
-  });
-
-  it("returns null when nothing resolves the scoring side", () => {
-    const result = resolveGoalEvent("Highlights of an unrelated match", "Atletico Madrid", "Sevilla");
-    expect(result).toBeNull();
-  });
-
-  it("resolves a bracketed penalty from the live scrape end to end", () => {
-    const result = resolveGoalEvent(
-      "VfL Osnabruck 1 - [4] Bayern Munich - Harry Kane Penalty 85'",
-      "VfL Osnabrück",
-      "Bayern Munich"
-    );
-    expect(result).toEqual({
-      side: "away",
-      playerName: "Harry Kane",
-      minute: 85,
-      extraMinute: null,
-      isPenalty: true,
-      isOwnGoal: false,
     });
   });
 });

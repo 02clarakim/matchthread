@@ -27,27 +27,19 @@ export const cacheKeys = {
  * Short-lived dedupe/in-flight markers. These are a defense-in-depth layer
  * on top of Postgres unique constraints (see MatchEvent@@unique) — they stop
  * a slow overlapping poll cycle from doing duplicate work (e.g. kicking off
- * a second Reddit search) before the DB write would have caught it anyway.
+ * a second matching pass) before the DB write would have caught it anyway.
  */
 export const dedupeKeys = {
   /** Prevents re-processing the same external event within one poll window. */
   eventSeen: (matchId: string, externalId: string) => `dedupe:event:${matchId}:${externalId}`,
-  /** Marks that social ingestion is already running for an event. */
-  socialInFlight: (eventId: string) => `dedupe:social:${eventId}`,
   /** Marks that the matching pipeline is already running for an event. */
   matchingInFlight: (eventId: string) => `dedupe:matching:${eventId}`,
 };
 
 export const DEDUPE_TTL_SECONDS = {
   EVENT_SEEN: 300,
-  SOCIAL_IN_FLIGHT: 120,
   MATCHING_IN_FLIGHT: 60,
 } as const;
 
 /** Single pub/sub channel carrying a discriminated union — see lib/redis/pubsub.ts. */
 export const REALTIME_CHANNEL = "football:updates";
-
-export const rateLimitKeys = {
-  redditSearch: () => "ratelimit:reddit:search",
-  aiMatching: () => "ratelimit:ai:matching",
-};

@@ -45,15 +45,14 @@ A modular monolith, not microservices — see [Why not microservices?](#why-not-
 ```mermaid
 flowchart TB
     subgraph External
-        SportsAPI[Football API<br/>football-data.org]
-        Reddit[Reddit API]
+        EspnAPI[ESPN API<br/>site.api.espn.com, free/keyless]
+        Reddit[r/soccer<br/>fetchlayer snapshot, see below]
         OpenAI[OpenAI API]
     end
 
     subgraph Workers["Background Workers (workers/)"]
-        Poller[sports-poller.ts]
+        Poller[espn-live-poller.ts]
         CommentaryWorker[commentary-worker.ts]
-        SocialIngestion[social-ingestion.ts]
         EventProcessor[event-processor.ts<br/>matching pipeline]
     end
 
@@ -67,18 +66,15 @@ flowchart TB
     WS[WebSocket Gateway<br/>workers/ws-server.ts]
     Browser[React Client]
 
-    SportsAPI --> Poller
+    EspnAPI --> Poller
+    Reddit -. scripts/backfill.ts --clips .-> DB
     Poller --> DB
     Poller --> Redis
     Poller --> CommentaryWorker
-    Poller --> SocialIngestion
     CommentaryWorker --> OpenAI
     CommentaryWorker -. optional, disabled today .-> FotMob[FotMob]
     CommentaryWorker --> DB
     CommentaryWorker --> Redis
-    SocialIngestion --> Reddit
-    SocialIngestion --> DB
-    SocialIngestion --> EventProcessor
     EventProcessor --> OpenAI
     EventProcessor --> DB
     EventProcessor --> Redis
@@ -92,7 +88,7 @@ flowchart TB
 
 ### Why not microservices?
 
-Every "service" above (poller, commentary, social ingestion, matching, WS gateway) is a plain TypeScript module with a narrow interface, running in-process or as a lightweight standalone script against the same Postgres/Redis. That gets ~90% of the architectural benefit of service separation — clear ownership, independent testability, swappable providers — without the operational cost of network boundaries, service discovery, or distributed tracing for a project this size. See [Future Improvements](#future-improvements) for how this would actually decompose at real scale.
+Every "service" above (poller, commentary, matching, WS gateway) is a plain TypeScript module with a narrow interface, running in-process or as a lightweight standalone script against the same Postgres/Redis. That gets ~90% of the architectural benefit of service separation — clear ownership, independent testability, swappable providers — without the operational cost of network boundaries, service discovery, or distributed tracing for a project this size. See [Future Improvements](#future-improvements) for how this would actually decompose at real scale.
 
 ---
 
@@ -102,7 +98,7 @@ Every "service" above (poller, commentary, social ingestion, matching, WS gatewa
 
 ```mermaid
 flowchart LR
-    A[Football API] --> B[Sports Poller]
+    A[ESPN API] --> B[espn-live-poller.ts]
     B --> C[Normalize + Idempotent Upsert]
     C --> D[(PostgreSQL)]
     C --> E[Redis Pub/Sub]
@@ -114,18 +110,16 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    A[New Important Event] --> B[Social Ingestion Worker]
-    B --> C[Reddit Candidate Posts]
-    C --> D[Deterministic Filtering]
-    D --> E[Fuzzy Matching]
-    E --> F{Confident?}
-    F -- yes --> H[Ranked Highlight]
-    F -- no, ambiguous --> G[Semantic / AI Matching]
-    G --> H
-    H --> I[(PostgreSQL + Redis)]
-    I --> J[WebSocket]
-    J --> K[React UI]
+    A[Reddit r/soccer] -->|fetchlayer scrape, ahead of time| B["data/reddit-clips/*.json"]
+    B --> C["scripts/backfill.ts --clips"]
+    C --> D[Verify against ESPN's own goal list]
+    D --> E[Attach as EventSocialMatch]
+    E --> F[(PostgreSQL + Redis)]
+    F --> G[WebSocket]
+    G --> H[React UI]
 ```
+
+The candidate → deterministic → fuzzy → semantic matching *engine* (`workers/event-processor.ts`, `lib/matching/`) described below still runs exactly as designed — `scripts/seed.ts` and `scripts/simulate-event.ts` both call it directly against seeded candidates. What's different from an earlier version of this pipeline is only *where the candidate posts come from*: not a live per-event Reddit search (that needs a registered Reddit app + `REDDIT_CLIENT_ID`/`SECRET`, which this project intentionally doesn't run at request time — see [Reddit-Sourced Goal Clips](#reddit-sourced-goal-clips) below), but a snapshot scraped ahead of time.
 
 ---
 
@@ -290,21 +284,17 @@ semantic similarity    15%   (renormalized out of the total when AI wasn't used)
 
 ---
 
-## Reddit-Sourced Live Detection (v1)
+## Reddit-Sourced Goal Clips
 
-`workers/sports-poller.ts` needs an official sports data API to know when something happened. A live-scores tier of one exists (see [Local Setup](#local-setup)), but it costs money and isn't a hard requirement to demonstrate the real-time architecture — so `workers/reddit-live-poller.ts` is an alternative source for v1: it treats **Reddit itself** as the live-event feed, on the premise that r/soccer's community usually posts a goal clip within seconds of it happening, often faster than a delayed API would confirm it anyway.
+Live match detection (score, minute, status, goals/cards/subs/VAR) is ESPN's job alone now — `workers/espn-live-poller.ts` polls ESPN's free scoreboard/summary endpoints (see [Architecture](#architecture)) and needs no API key or Reddit involvement at all. Reddit's role is narrower and more specific: **sourcing the embeddable clip for a goal ESPN already told us about.**
 
-**How it works:** every 20s, for each match that's `LIVE` or `SCHEDULED` with kickoff already passed, it searches r/soccer and feeds anything it finds through the exact same `ingestNormalizedEvent` pipeline every other source uses — same idempotency, same Redis publish, same WebSocket fan-out. The triggering post is attached as the event's highlight immediately (score 1.0, method `DETERMINISTIC`) instead of going through a separate post-hoc search, since it *is* the source, not something found afterward.
+**Why this isn't a live per-request Reddit search:** an earlier version of this project searched Reddit's OAuth API (`client_credentials` grant, a registered "script" app) once per event, live, at ingest time. That path (`lib/reddit/client.ts`, `workers/social-ingestion.ts`, `workers/reddit-live-poller.ts`) has been removed — it needed a Reddit app registration this project never actually configured (no `REDDIT_CLIENT_ID`/`SECRET` was ever set, in dev or otherwise), and running a live search on every goal is more moving parts than the payoff justifies for a portfolio-scope demo. What actually populates real clips today, successfully, is simpler:
 
-**Confidence is not uniform across event types — this is the tradeoff to know before trusting this in front of anyone:**
+1. **Scrape ahead of time.** r/soccer's `"Goal Clip"` flair posts for a given matchweek are captured via the fetchlayer MCP tool (interactively, by asking Claude Code to re-scrape) into flat JSON snapshots under `data/reddit-clips/` — real post titles, permalinks, authors, timestamps, checked into the repo.
+2. **Assign and verify.** `scripts/backfill.ts --clips` parses each snapshot's title against r/soccer's actual "Goal Clip" convention, assigns it to the matching ESPN fixture, and **cross-checks it against ESPN's own goal list** (`lib/matching/verify-goals.ts`) before attaching anything — a clip that contradicts ESPN's scorer/minute is flagged, not silently trusted (see `--force` to attach it anyway).
+3. **Resolve the media.** `scripts/resolve-clip-media.ts` / `lib/reddit/resolve-post-media.ts` turn a bare Reddit permalink into a directly embeddable URL — `embed.reddit.com`'s markup exposes the post's true outbound link via a plain `fetch()` (no Reddit API needed for this step either), and known clip-mirror hosts (streamff, streamin, …) get their direct `.mp4` resolved the same way.
 
-| Event | Detection | Confidence | Why |
-|---|---|---|---|
-| Goals | r/soccer's dedicated **"Goal Clip"** flair (`flair_name:":n_goal: Goal Clip"`), with a lenient-flair then keyword fallback if that returns nothing | High | A purpose-built signal — someone using this flair is asserting "this is a goal," not just discussing the match. Comes with an instant embeddable clip. |
-| Red cards | Keyword search only (`"<team> <team> red card"`) | Lower | No dedicated flair exists for these. Can miss one, or occasionally match a post about a red card from an unrelated match involving the same team. |
-| Yellow cards, substitutions | **Not detected** | — | There's no "someone always posts this" signal on Reddit the way there is for goals. Closing this gap needs an official data source (`workers/sports-poller.ts`), free or paid. Demonstrate them manually with `npm run simulate-event -- --type=yellow` / `--type=sub`. |
-
-**Goal parsing targets r/soccer's actual "Goal Clip" title convention**, confirmed against real examples rather than guessed:
+**Goal title parsing targets r/soccer's actual "Goal Clip" convention**, confirmed against real examples rather than guessed:
 
 ```
 Lille 2-[2] Paris Saint-Germain - Marquinhos 90+5'
@@ -312,15 +302,9 @@ Crystal Palace 1 - [4] Manchester City - Erling Haaland 84'
 Bayern [5] - 1 Stuttgart - Luis Diaz 93' (Amazing pass from Saibari)
 ```
 
-The scoring team's number is wrapped in **`[brackets]`** — an explicit, unambiguous "who scored" signal, which `parseGoalClipTitle()` reads directly rather than inferring. From the same match it also pulls minute (including stoppage time, `90+5`), player name, and a `Penalty` flag (→ event type `PENALTY_GOAL` instead of `GOAL`). All three examples above, plus a fourth with no brackets at all, are asserted verbatim in `tests/unit/reddit-goal-clip-parser.test.ts`.
+The scoring team's number is wrapped in **`[brackets]`** — an explicit, unambiguous "who scored" signal, which `parseGoalClipTitle()` reads directly rather than inferring. From the same title it also pulls minute (including stoppage time, `90+5`), player name, and a `Penalty` flag (→ event type `PENALTY_GOAL` instead of `GOAL`). All three examples above, plus a fourth with no brackets at all, are asserted verbatim in `tests/unit/reddit-goal-clip-parser.test.ts`. The flair string itself (`GOAL_CLIP_FLAIR`) **was** confirmed against a live r/soccer search on 2026-09-02: the indexed flair name carries the `:n_goal:` emoji shortcode, so `flair_name:"Goal Clip"` returns nothing while `flair_name:":n_goal: Goal Clip"` returns real goal-clip posts.
 
-Not every post follows the convention exactly (that fourth example — `Tijuana 2-0 Pumas - Gilberto Mora Penalty 81'` — has no brackets), so `resolveGoalEvent()` falls back to the older heuristic for anything the structured parser can't confidently read: alias matching first, then the same score-delta idea as the fallback in `workers/sports-poller.ts` (parse an "X-Y" score, compare it to the match's currently known score, see which side went up). **If neither strategy resolves a scoring side, the post is skipped** — an auto-detected goal wrongly credited to the wrong team would also mis-increment the scoreboard, which is worse than not showing it at all. Red cards, which have no equivalent bracket convention, always use this fallback path.
-
-**Because there's no official status/score feed**, this worker also heuristically flips a match `SCHEDULED → LIVE` at kickoff time and `LIVE → FINISHED` after an assumed ~125-minute duration, and refreshes `minute` from elapsed time each cycle (on top of the client-side ticking in [Real-Time Architecture](#real-time-architecture)).
-
-**What's verified vs. what isn't:** the title parser is tested against real post titles (above), and the full pipeline it feeds into — event ingestion, score increment, highlight attach, idempotency, ambiguous-team skip — is verified against real Postgres/Redis with the Reddit network call mocked (`tests/integration/reddit-live-poller.test.ts`). The flair string (`GOAL_CLIP_FLAIR` in `lib/reddit/live-detector.ts`) **was** confirmed against a live r/soccer search on 2026-09-02: the indexed flair name carries the `:n_goal:` emoji shortcode, so `flair_name:"Goal Clip"` returns nothing while `flair_name:":n_goal: Goal Clip"` returns real goal-clip posts — the constant and its fixtures in `tests/unit/reddit-goal-clip-parser.test.ts` were updated from that scrape. What's still *not* exercised in CI is the search round-trip itself (the OAuth call is mocked in tests); if moderators rename the flair, `findGoalClipPosts()` degrades through its lenient-flair and keyword fallbacks at lower precision.
-
-To run it: `npm run worker:reddit-live-poller` (requires `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` — see [Environment Variables](#environment-variables); without them it logs a warning and does nothing, same graceful-skip behavior as every other optional provider in this app).
+**What this means in practice:** new real-world goals get a real Reddit clip when someone (a developer, or Claude Code on request) re-runs the scrape-and-backfill cycle for that matchweek — it's a deliberate, verified, low-volume batch step, not an always-on live feed. `npm run simulate-event -- --type=goal` remains the reliable way to demo the end-to-end live pipeline (event → commentary → highlight → WebSocket) for a goal that doesn't have a real backfilled clip yet. Yellow cards, substitutions, and VAR decisions never had a Reddit clip signal to begin with (no dedicated flair exists) — ESPN's own summary feed is the only source for those event types.
 
 ---
 
@@ -336,13 +320,12 @@ This is proven, not just asserted: `npm run simulate-event -- --replay` re-sends
 
 **Failure isolation:**
 
-- **Sports API down:** `lib/sports/football-data.ts` times out, retries 3× with exponential backoff, and returns `[]`/`null` on final failure — logged as `sports_api_failure`, never thrown into the poll loop. One bad match in a poll cycle (`workers/sports-poller.ts`) doesn't stop the rest from processing.
-- **Reddit down/unconfigured:** `lib/reddit/client.ts#searchSubreddit` returns `[]` on any failure. Social ingestion simply finds no new candidates; existing highlights stay visible.
-- **AI provider down/unconfigured:** see [AI Matching](#ai-matching) — silent fallback to fuzzy-only scoring.
+- **ESPN API down:** `lib/sports/espn.ts`'s fetch calls (`fetchEspnScoreboard`, `fetchEspnMatch`, `fetchEspnTeams`) each go through `fetchWithRetry` (2-3 retries, exponential backoff) and return `[]`/`null`/throw on final failure, caught in `workers/espn-live-poller.ts` and `scripts/backfill.ts` per-fixture — one bad match in a poll cycle doesn't stop the rest from processing.
+- **AI provider down/unconfigured:** see [AI Matching](#ai-matching) — silent fallback to fuzzy-only scoring for candidate matching, and to the generated template for commentary (see [Commentary Architecture](#commentary-architecture)).
 - **WebSocket disconnects:** client reconnects with exponential backoff (capped at 15s) and re-subscribes; the gateway itself is stateless per-connection, so a reconnect is just a fresh subscribe.
-- **A background trigger outliving its caller:** short-lived scripts (`seed.ts`, `simulate-event.ts`) fire commentary/social work without awaiting it inline (so the *interactive* pipeline stays non-blocking) but track those promises via `waitForPendingBackgroundWork()` and wait for them before disconnecting Prisma/Redis — otherwise the process could exit mid-query. This is a real bug I hit and fixed while building this: the first version disconnected immediately and the in-flight commentary query died with an opaque Prisma engine error.
+- **A background trigger outliving its caller:** short-lived scripts (`seed.ts`, `simulate-event.ts`) fire commentary work without awaiting it inline (so the *interactive* pipeline stays non-blocking) but track those promises via `waitForPendingBackgroundWork()` and wait for them before disconnecting Prisma/Redis — otherwise the process could exit mid-query. This is a real bug I hit and fixed while building this: the first version disconnected immediately and the in-flight commentary query died with an opaque Prisma engine error.
 
-**Caching** avoids redundant calls to the sports API within its refresh window — see the TTL table in `lib/redis/keys.ts`.
+**Caching** avoids redundant calls to the ESPN API within its refresh window — see the TTL table in `lib/redis/keys.ts`.
 
 ---
 
@@ -351,11 +334,10 @@ This is proven, not just asserted: `npm run simulate-event -- --replay` re-sends
 - **Authentication:** Auth.js (NextAuth v5) with the **Credentials provider + JWT sessions** — no OAuth provider, so no database adapter/Account/Session tables, which would be pure overhead here. Passwords are hashed with bcrypt (`bcryptjs`, cost factor 10) and never logged (`lib/logger` redacts known-sensitive keys).
 - **Authorization:** every user-scoped API route reads the user id from the server-verified session (`auth()`), never from the client. `DELETE /api/user/favorite-teams/:teamId` is structurally incapable of touching another user's row — the query is always scoped to `session.user.id`, proven in `tests/api/favorite-teams.test.ts`.
 - **Route protection:** `proxy.ts` (Next.js's renamed middleware convention) redirects unauthenticated requests to `/dashboard/*` to `/login`.
-- **API keys never reach the browser:** `OPENAI_API_KEY`, `SPORTS_API_KEY`, `REDDIT_CLIENT_SECRET` are read only in server-side modules (`lib/*`, `workers/*`) and are not `NEXT_PUBLIC_*` variables.
+- **API keys never reach the browser:** `OPENAI_API_KEY` is read only in server-side modules (`lib/*`, `workers/*`) and is not a `NEXT_PUBLIC_*` variable. ESPN's endpoints are free/keyless, so there's no ESPN credential to protect.
 - **WebSocket auth:** the gateway verifies a short-lived (60s) signed JWT before honoring a `subscribe_favorites` request; unauthenticated connections can still subscribe to a specific `matchId` (that's public data) but not to a favorites feed.
 - **Input validation:** every API route that accepts a body or query parameter validates it with `zod` and returns `400` on failure, rather than letting bad input reach Prisma.
-- **Rendering untrusted content:** Reddit titles/bodies are rendered as plain React text (never `dangerouslySetInnerHTML`), and commentary text is HTML-stripped in `lib/commentary/normalizer.ts` before storage.
-- **Rate limiting:** both the sports API client and the Reddit client enforce a conservative request budget via Redis counters (`lib/sports/football-data.ts`, `lib/reddit/client.ts`), independent of the providers' own limits.
+- **Rendering untrusted content:** Reddit titles/bodies (sourced via the scrape-and-verify pipeline in [Reddit-Sourced Goal Clips](#reddit-sourced-goal-clips)) are rendered as plain React text (never `dangerouslySetInnerHTML`), and commentary text is HTML-stripped in `lib/commentary/normalizer.ts` before storage.
 
 ---
 
@@ -384,22 +366,20 @@ npm run dev                 # Next.js app  — http://localhost:3000
 npm run ws-server           # WebSocket gateway (separate terminal) — ws://localhost:4001
 ```
 
-Optional, for a live (non-demo) match feed — two independent sources, see [Reddit-Sourced Live
-Detection](#reddit-sourced-live-detection-v1) for the tradeoffs between them:
+Optional, for a live (non-demo) match feed — free, keyless, no account/registration needed:
 
 ```bash
-npm run worker:reddit-live-poller   # requires REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET — v1 default, free
-npm run worker:sports-poller        # requires SPORTS_API_KEY — official data, but see note below
+npm run worker:espn-live-poller     # live scores/goals/cards/subs/VAR from ESPN's free API
 ```
 
-> **football-data.org pricing, confirmed against their current pages (not assumed):** the free
-> tier returns **delayed** scores, not live — real-time/in-play data needs their "Free w/
-> Livescores" tier, €12/month (not the €29 ML/Deep-Data tiers, which bundle extras this app
-> doesn't use). Free-tier competition coverage lists Premier League, Bundesliga, and La Liga
-> among others — confirm on your own account after registering, since this page showed some
-> inconsistency between its marketing copy and pricing table when checked. Neither of this
-> blocks the demo experience above, which never depends on a live key — see [Demo
-> Mode](#demo-mode).
+To backfill real historical fixtures (with verified scorers/cards) and, optionally, real Reddit
+goal clips — see [Reddit-Sourced Goal Clips](#reddit-sourced-goal-clips) for how the clip snapshot
+step works:
+
+```bash
+npm run backfill -- --league=eng.1 --clips   # ESPN fixtures + scored/verified events
+npm run resolve-clips                         # resolve attached clips to direct embeddable media
+```
 
 Other commands:
 
@@ -416,7 +396,7 @@ npm run db:studio                       # Prisma Studio, browse the DB
 
 ## Environment Variables
 
-See `.env.example` for the full list with inline documentation. Nothing beyond `DATABASE_URL`, `REDIS_URL`, and `AUTH_SECRET` is required to run the full demo experience — `SPORTS_API_KEY`, `OPENAI_API_KEY`, and `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` are all optional, with documented graceful fallback when unset (see [Reliability](#reliability)).
+See `.env.example` for the full list with inline documentation. Nothing beyond `DATABASE_URL`, `REDIS_URL`, and `AUTH_SECRET` is required to run the full demo experience, including live ESPN-sourced matches — `OPENAI_API_KEY` is the only other variable, and it's optional, with documented graceful fallback when unset (see [Reliability](#reliability)).
 
 ## Demo Mode
 
@@ -436,7 +416,7 @@ Explicitly **not** built, and why that's the right call for this scope — not a
 - **Push notifications** for events on followed teams while the app is closed.
 - **Additional sports/leagues** — the schema and provider abstractions don't assume football specifically anywhere except the UI copy.
 - **Improved ranking** — a learned re-ranker over the same component scores, once there's enough labeled match/no-match data to train on.
-- **A first-party community layer** — the `SocialProvider` abstraction exists specifically so this doesn't require ripping out Reddit, just adding a provider.
+- **A first-party community layer, or a live social source** — `workers/event-processor.ts`'s matching engine is already source-agnostic (it matches whatever `SocialPost` rows exist against an event); adding a live source back means writing something that populates `SocialPost` in real time (a registered Reddit app, a licensed feed, a first-party community), not changing the matching engine itself.
 - **Licensed media embeds** — today the app only ever links to Reddit/source content, deliberately never re-hosts footage.
 - **Native mobile app** — the API layer is already a clean boundary a mobile client could consume directly.
 
@@ -465,9 +445,9 @@ app/           Next.js App Router — pages + API routes
 components/    React components (match, feed, teams, commentary, social, auth, ui)
 lib/           Provider-agnostic business logic — db, redis, auth, sports, reddit, social,
                commentary, matching, websocket, http, logger
-workers/       Standalone/background processes — sports-poller, commentary-worker,
-               social-ingestion, event-processor, ws-server
+workers/       Standalone/background processes — espn-live-poller, commentary-worker,
+               event-processor, ws-server
 prisma/        Schema + migrations
-scripts/       seed.ts, simulate-event.ts
+scripts/       seed.ts, simulate-event.ts, backfill.ts, resolve-clip-media.ts, regenerate-commentary.ts
 tests/         unit/, integration/, api/
 ```

@@ -6,7 +6,6 @@ import { invalidateCache } from "../redis/cache";
 import { publishRealtimeMessage } from "../redis/pubsub";
 import type { NormalizedEvent, NormalizedLeague, NormalizedMatch, NormalizedTeam } from "./types";
 import { matchSlug, teamProfileSlug } from "./match-slug";
-import { isSocialWorthy, ingestSocialForEvent } from "../../workers/social-ingestion";
 import { attachCommentary } from "../../workers/commentary-worker";
 import type { Match, MatchEvent } from "@prisma/client";
 
@@ -313,7 +312,7 @@ export async function ingestNormalizedEvent(
     },
   });
 
-  triggerDownstreamProcessing(event.id, event.type);
+  triggerDownstreamProcessing(event.id);
 
   return { event, isNew };
 }
@@ -343,19 +342,21 @@ function track(promise: Promise<unknown>) {
   promise.finally(() => pendingBackgroundWork.delete(promise));
 }
 
-/** Fire-and-forget: commentary + (for important events) social ingestion, so the caller isn't blocked. */
-function triggerDownstreamProcessing(eventId: string, eventType: string) {
+/**
+ * Fire-and-forget commentary generation, so the caller isn't blocked.
+ *
+ * Social/clip matching is NOT triggered here: this project's live source of
+ * goal clips is a snapshot of real r/soccer posts captured via the fetchlayer
+ * MCP tool (data/reddit-clips/, consumed by `scripts/backfill.ts --clips`),
+ * not a live Reddit API search — there's no Reddit app credential to search
+ * with at ingest time. `workers/event-processor.ts`'s matching engine still
+ * runs, just from that static snapshot (or the seed data) instead of a live
+ * per-event search — see scripts/backfill.ts and scripts/seed.ts.
+ */
+function triggerDownstreamProcessing(eventId: string) {
   track(
     attachCommentary(eventId).catch((err) =>
       logger.error("commentary_worker_trigger_failed", { eventId, error: String(err) })
     )
   );
-
-  if (isSocialWorthy(eventType)) {
-    track(
-      ingestSocialForEvent(eventId).catch((err) =>
-        logger.error("social_ingestion_trigger_failed", { eventId, error: String(err) })
-      )
-    );
-  }
 }

@@ -18,8 +18,6 @@
     "regenerate-commentary": "tsx scripts/regenerate-commentary.ts",
     "simulate-event": "tsx scripts/simulate-event.ts",
     "ws-server": "tsx workers/ws-server.ts",
-    "worker:sports-poller": "tsx workers/sports-poller.ts",
-    "worker:reddit-live-poller": "tsx workers/reddit-live-poller.ts",
     "worker:espn-live-poller": "tsx workers/espn-live-poller.ts",
     "test": "vitest run",
     "test:watch": "vitest",
