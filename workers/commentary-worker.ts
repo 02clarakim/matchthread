@@ -38,6 +38,7 @@ export async function attachCommentary(eventId: string): Promise<void> {
     playerName: event.playerName,
     assistName: event.assistName,
     detail: event.detail,
+    sourceText: event.sourceText,
   };
 
   const commentary = await getCommentaryForEvent(input);

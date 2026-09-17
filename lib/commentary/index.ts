@@ -1,18 +1,29 @@
 import type { CommentaryProvider, CommentaryInput, Commentary } from "./provider";
 import { sportsApiCommentaryProvider } from "./sports-api";
 import { fotmobCommentaryProvider } from "./fotmob";
+import { llmCommentaryProvider } from "./llm-provider";
 import { generatedCommentaryProvider } from "./generated";
 import { normalizeCommentaryText } from "./normalizer";
 import { logger } from "../logger";
 
 export type { CommentaryProvider, CommentaryInput, Commentary };
 
-const PROVIDER_TIMEOUT_MS = 3000;
+// Slightly above llm-provider's own OpenAI client timeout (4000ms) so a slow
+// call resolves via that client's own timeout/retry handling (caught inside
+// the provider, returns null) rather than being cut off by this race first.
+const PROVIDER_TIMEOUT_MS = 5000;
 
-/** Fallback order: official sports API detail → (disabled) FotMob → generated. */
+/**
+ * Fallback order: official sports API detail → (disabled) FotMob → LLM
+ * (gpt-4o-mini, skipped instantly if OPENAI_API_KEY is unset) → generated
+ * template. The template is the guaranteed floor — a missing key, a timeout,
+ * or an API error all fall straight through to it, exactly like every other
+ * optional provider in this app.
+ */
 const PROVIDER_CHAIN: CommentaryProvider[] = [
   sportsApiCommentaryProvider,
   fotmobCommentaryProvider,
+  llmCommentaryProvider,
   generatedCommentaryProvider,
 ];
 

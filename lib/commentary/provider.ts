@@ -18,6 +18,15 @@ export interface CommentaryInput {
   assistName?: string | null;
   /** Raw provider-supplied detail string, if any (e.g. "Yellow card - Foul"). */
   detail?: string | null;
+  /**
+   * Grounding facts from the data source's own play-by-play (ESPN's
+   * `keyEvents[].text`, e.g. "left footed shot from the centre of the box
+   * ... Assisted by ... with a headed pass."). Only lib/commentary/
+   * llm-provider.ts reads this — as source material for an *original*
+   * sentence, never reproduced verbatim (see that file's doc comment for
+   * why that distinction matters here).
+   */
+  sourceText?: string | null;
 }
 
 export interface Commentary {

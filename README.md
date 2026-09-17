@@ -248,15 +248,21 @@ interface CommentaryProvider {
 }
 ```
 
-Fallback order: **sports-api detail** → **FotMob (disabled)** → **generated template**. Every provider is timeout-wrapped and failure-isolated — one slow/broken provider is logged and skipped, never fatal.
+Fallback order: **sports-api detail** → **FotMob (disabled)** → **LLM** → **generated template**. Every provider is timeout-wrapped and failure-isolated — one slow/broken provider is logged and skipped, never fatal.
 
 ### FotMob investigation
 
 The brief asked me to check whether FotMob exposes structured commentary I could legitimately use. FotMob's site is backed by an internal JSON API its own frontend calls — undocumented, no public developer program, no published terms permitting third-party use, and no stable versioning. Using it would mean depending on an endpoint that can change without notice and would likely require reverse-engineering request signing that drifts into "circumventing technical protections" — explicitly out of scope for this project. **Conclusion: not used.** `lib/commentary/fotmob.ts` keeps a real slot in the provider chain (so a legitimate, documented API could be dropped in later without touching anything else) but always returns `null` today. The app is fully functional without it.
 
+### LLM commentary
+
+`lib/commentary/llm-provider.ts` writes one original, vivid sentence per event (goals, cards, substitutions, VAR) using **gpt-4o-mini** — chosen for being the cheap, already-integrated model (same `OPENAI_API_KEY` / `openai` package as the AI matching provider below; ~$0.0001/event, so backfilling the whole season's worth of events cost a few cents). Skipped instantly with no network call if `OPENAI_API_KEY` is unset, exactly like the AI matching provider.
+
+The same line drawn for FotMob applies here: ESPN's own play-by-play sentence (`MatchEvent.sourceText`, captured from `keyEvents[].text` in the free `site.api.espn.com` summary already fetched for goals/cards/subs) is passed to the model **as facts to extract, not text to paraphrase** — shot type, placement, assist type, foul severity. The prompt explicitly forbids copying its wording, and the few-shot examples that calibrate the model's voice were written fresh for this project, not lifted from any broadcast or article. Backfilled via `npm run regenerate-commentary` (re-runs the whole existing event history through the new chain; safe to re-run).
+
 ### Generated fallback
 
-When no external commentary exists, `lib/commentary/generated.ts` produces a deterministic, template-based sentence from structured event data — no LLM call per event. AI is deliberately reserved for the one problem that actually needs it: matching ambiguous social posts to events (see below). Calling an LLM to paraphrase "Saka scored" would be cost and latency for no real gain.
+When no external commentary exists — or `OPENAI_API_KEY` is unset, or the LLM call times out/errors — `lib/commentary/generated.ts` produces a deterministic, template-based sentence from structured event data, no network call. This is the guaranteed floor for the whole chain, exercised live every time the demo runs without an OpenAI key configured.
 
 ---
 
