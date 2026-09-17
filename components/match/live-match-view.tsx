@@ -11,6 +11,10 @@ import { byClipThenScore } from "@/lib/social/clip-rank";
 import { GOAL_EVENT_TYPES } from "@/lib/match-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { usePersistedToggle } from "@/lib/use-persisted-toggle";
+
+const SHOW_SUBSTITUTIONS_KEY = "matchpulse:show-substitutions";
 
 interface LiveMatchViewProps {
   initialMatch: ApiMatch;
@@ -78,7 +82,11 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
 
   useRealtime({ matchId: initialMatch.id, onMessage });
 
-  const sortedEvents = [...events].sort((a, b) => b.minute - a.minute);
+  const [showSubstitutions, setShowSubstitutions] = usePersistedToggle(SHOW_SUBSTITUTIONS_KEY, false);
+
+  const sortedEvents = [...events]
+    .filter((e) => showSubstitutions || e.type !== "SUBSTITUTION")
+    .sort((a, b) => b.minute - a.minute);
 
   function teamAndSideFor(event: ApiEvent) {
     if (event.teamId === match.homeTeam.id) return { team: match.homeTeam, side: "home" as const };
@@ -96,10 +104,17 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <CardHeader className="text-sm font-semibold">Match Timeline</CardHeader>
+          <CardHeader className="flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold">Match Timeline</span>
+            <ToggleSwitch checked={showSubstitutions} onChange={setShowSubstitutions} label="Show substitutions" />
+          </CardHeader>
           <CardBody className="divide-y divide-border">
             {sortedEvents.length === 0 ? (
-              <EmptyState icon="⚽">No events yet.</EmptyState>
+              <EmptyState icon="⚽">
+                {events.length > 0
+                  ? "No goals or cards yet — this match's activity so far is substitutions, hidden above."
+                  : "No events yet."}
+              </EmptyState>
             ) : (
               sortedEvents.map((event) => {
                 const { team, side } = teamAndSideFor(event);
