@@ -16,6 +16,16 @@ export const EVENT_TYPE_META: Record<MatchEventType, { icon: string; label: stri
   OTHER: { icon: "ℹ", label: "Event", tone: "text-muted" },
 };
 
+/**
+ * Home vs away text color for the team tag on a timeline row — deliberately
+ * distinct from the event-tone palette above (accent/info/warning/danger)
+ * so "which team" never reads as "what kind of event".
+ */
+export const TEAM_SIDE_TONE: Record<"home" | "away", string> = {
+  home: "text-sky-600 dark:text-sky-400",
+  away: "text-fuchsia-600 dark:text-fuchsia-400",
+};
+
 export const STATUS_META: Record<MatchStatus, { label: string; tone: string; live: boolean }> = {
   SCHEDULED: { label: "Scheduled", tone: "text-muted", live: false },
   LIVE: { label: "Live", tone: "text-accent", live: true },
@@ -27,6 +37,14 @@ export const STATUS_META: Record<MatchStatus, { label: string; tone: string; liv
 
 export function minuteLabel(minute: number, extraMinute?: number | null): string {
   return extraMinute ? `${minute}+${extraMinute}'` : `${minute}'`;
+}
+
+export const GOAL_EVENT_TYPES: MatchEventType[] = ["GOAL", "PENALTY_GOAL", "OWN_GOAL"];
+
+/** "Saka 59'", "Elanga 62' (pen.)", "Greaves 90' (OG)" — the scoreboard-style line under a team's name. */
+export function goalLineLabel(event: { playerName: string | null; minute: number; extraMinute?: number | null; type: MatchEventType }): string {
+  const suffix = event.type === "PENALTY_GOAL" ? " (pen.)" : event.type === "OWN_GOAL" ? " (OG)" : "";
+  return `${event.playerName ?? "Unknown"} ${minuteLabel(event.minute, event.extraMinute)}${suffix}`;
 }
 
 export function kickoffTimeLabel(kickoffAt: string | Date): string {

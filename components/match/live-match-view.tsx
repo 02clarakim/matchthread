@@ -8,6 +8,7 @@ import { ScoreHeader } from "@/components/match/score-header";
 import { EventItem } from "@/components/match/event-item";
 import { HighlightList } from "@/components/social/highlight-list";
 import { byClipThenScore } from "@/lib/social/clip-rank";
+import { GOAL_EVENT_TYPES } from "@/lib/match-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 
@@ -79,9 +80,19 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
 
   const sortedEvents = [...events].sort((a, b) => b.minute - a.minute);
 
+  function teamAndSideFor(event: ApiEvent) {
+    if (event.teamId === match.homeTeam.id) return { team: match.homeTeam, side: "home" as const };
+    if (event.teamId === match.awayTeam.id) return { team: match.awayTeam, side: "away" as const };
+    return { team: null, side: null };
+  }
+
+  const goals = events.filter((e) => GOAL_EVENT_TYPES.includes(e.type)).sort((a, b) => a.minute - b.minute);
+  const homeGoals = goals.filter((e) => e.teamId === match.homeTeam.id);
+  const awayGoals = goals.filter((e) => e.teamId === match.awayTeam.id);
+
   return (
     <div className="space-y-6">
-      <ScoreHeader match={match} />
+      <ScoreHeader match={match} homeGoals={homeGoals} awayGoals={awayGoals} />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -90,9 +101,12 @@ export function LiveMatchView({ initialMatch, initialEvents, initialHighlights }
             {sortedEvents.length === 0 ? (
               <EmptyState icon="⚽">No events yet.</EmptyState>
             ) : (
-              sortedEvents.map((event) => (
-                <EventItem key={event.id} event={event} isNew={liveEventIds.has(event.id)} />
-              ))
+              sortedEvents.map((event) => {
+                const { team, side } = teamAndSideFor(event);
+                return (
+                  <EventItem key={event.id} event={event} isNew={liveEventIds.has(event.id)} team={team} side={side} />
+                );
+              })
             )}
           </CardBody>
         </Card>
