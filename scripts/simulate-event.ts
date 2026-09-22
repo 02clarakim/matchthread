@@ -313,6 +313,6 @@ main()
     // the DB/Redis connections it's still using (see waitForPendingBackgroundWork).
     await waitForPendingBackgroundWork();
     await prisma.$disconnect();
-    redis.disconnect();
-    redisPublisher.disconnect();
+    redis?.disconnect();
+    redisPublisher?.disconnect();
   });

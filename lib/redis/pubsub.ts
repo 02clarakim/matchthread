@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { redisPublisher, createSubscriberClient } from "./client";
 import { REALTIME_CHANNEL } from "./keys";
 import { logger } from "../logger";
@@ -61,7 +62,23 @@ export type RealtimeMessage =
       minute: number | null;
     };
 
+/**
+ * Two backends behind this same interface: real Redis pub/sub when
+ * REDIS_URL is configured (local dev via docker-compose, or a
+ * multi-process deploy) — required whenever publishers and the WebSocket
+ * gateway are separate OS processes — or an in-process EventEmitter when
+ * it isn't, for the single-merged-process deploy (server.ts) where
+ * they're all the same process already and Redis would just be a paid
+ * relay talking to itself.
+ */
+const localEmitter = new EventEmitter();
+localEmitter.setMaxListeners(50); // generous headroom; one WS gateway subscribes, but this is cheap either way
+
 export async function publishRealtimeMessage(message: RealtimeMessage): Promise<void> {
+  if (!redisPublisher) {
+    localEmitter.emit("message", message);
+    return;
+  }
   try {
     await redisPublisher.publish(REALTIME_CHANNEL, JSON.stringify(message));
     logger.info("redis_publish", { channel: REALTIME_CHANNEL, type: message.type, matchId: message.matchId });
@@ -71,13 +88,20 @@ export async function publishRealtimeMessage(message: RealtimeMessage): Promise<
 }
 
 /**
- * Subscribes to the realtime channel on a dedicated connection.
- * Returns an unsubscribe function. Intended for use by the standalone
- * WebSocket gateway process (workers/ws-server.ts).
+ * Subscribes to the realtime channel (via Redis on a dedicated connection,
+ * or the in-process emitter — see above). Returns an unsubscribe function.
+ * Intended for use by the WebSocket gateway (workers/ws-server.ts).
  */
 export function subscribeToRealtimeMessages(
   onMessage: (message: RealtimeMessage) => void
 ): () => Promise<void> {
+  if (!redisPublisher) {
+    localEmitter.on("message", onMessage);
+    return async () => {
+      localEmitter.off("message", onMessage);
+    };
+  }
+
   const subscriber = createSubscriberClient();
 
   subscriber.subscribe(REALTIME_CHANNEL, (err) => {

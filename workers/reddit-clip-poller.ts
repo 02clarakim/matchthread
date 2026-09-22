@@ -301,7 +301,7 @@ let currentWindow: Window = null;
 let lastRunAt: number | null = null;
 let catchUpDoneForDate: string | null = null;
 
-async function startPolling(): Promise<void> {
+export async function startPolling(): Promise<void> {
   logger.info("reddit_clip_poller_started", {
     pollIntervalMs: POLL_INTERVAL_MS,
     checkIntervalMs: CHECK_INTERVAL_MS,

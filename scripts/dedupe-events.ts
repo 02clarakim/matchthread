@@ -116,6 +116,6 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    redis.disconnect();
-    redisPublisher.disconnect();
+    redis?.disconnect();
+    redisPublisher?.disconnect();
   });

@@ -180,6 +180,6 @@ main()
   .finally(async () => {
     await waitForPendingBackgroundWork();
     await prisma.$disconnect();
-    redis.disconnect();
-    redisPublisher.disconnect();
+    redis?.disconnect();
+    redisPublisher?.disconnect();
   });

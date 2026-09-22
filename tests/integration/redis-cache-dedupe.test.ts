@@ -3,11 +3,14 @@ import { randomUUID } from "node:crypto";
 import { redis } from "@/lib/redis/client";
 import { claimOnce, withCache } from "@/lib/redis/cache";
 
-describe("Redis dedupe/caching (against a real Redis instance)", () => {
+// Skipped when REDIS_URL isn't set (lib/redis/client.ts) — this suite
+// specifically exercises the real-Redis backend, not the in-process
+// fallback used by the merged single-process deploy (server.ts).
+describe.skipIf(!redis)("Redis dedupe/caching (against a real Redis instance)", () => {
   const keysToClean: string[] = [];
 
   afterAll(async () => {
-    if (keysToClean.length > 0) await redis.del(...keysToClean);
+    if (keysToClean.length > 0) await redis!.del(...keysToClean);
   });
 
   it("claimOnce lets the first caller through and blocks the second", async () => {

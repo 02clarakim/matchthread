@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createServer, type Server as HttpServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { prisma } from "../lib/db/prisma";
 import { logger } from "../lib/logger";
@@ -8,7 +9,9 @@ import { isClientMessage, type ServerMessage } from "../lib/websocket/protocol";
 
 // Render (and most PaaS web-service hosts) assign the listening port via
 // PORT, not a custom var — check it first so this binds correctly there,
-// while WS_PORT keeps working for local dev (see .env.example).
+// while WS_PORT keeps working for local dev (see .env.example). Only used
+// in standalone mode (see startStandalone below) — the merged single-
+// process deploy (server.ts) already owns a port via Next.js.
 const PORT = Number(process.env.PORT ?? process.env.WS_PORT ?? 4001);
 
 interface ClientState {
@@ -33,8 +36,16 @@ async function loadFavoriteTeamIds(userId: string): Promise<Set<string>> {
   return new Set(favorites.map((f) => f.teamId));
 }
 
-function startServer() {
-  const wss = new WebSocketServer({ port: PORT });
+/**
+ * Attaches the WebSocket gateway to an existing HTTP server, sharing its
+ * port — the `ws` library hooks the server's `upgrade` event specifically,
+ * so normal HTTP requests (Next.js's, in the merged deploy — see
+ * server.ts) are untouched. Used by both the standalone entrypoint below
+ * and the merged single-process server, so there's exactly one
+ * implementation of the actual gateway logic either way.
+ */
+export function attachWebSocketGateway(server: HttpServer): WebSocketServer {
+  const wss = new WebSocketServer({ server });
 
   wss.on("connection", (ws) => {
     const state: ClientState = {
@@ -124,7 +135,8 @@ function startServer() {
     });
   });
 
-  logger.info("websocket_gateway_started", { port: PORT });
+  subscribeToRealtimeMessages(broadcast);
+  logger.info("websocket_gateway_attached", {});
   return wss;
 }
 
@@ -147,15 +159,28 @@ function broadcast(message: RealtimeMessage) {
   logger.info("websocket_broadcast", { type: message.type, matchId: message.matchId, delivered });
 }
 
-startServer();
-const unsubscribe = subscribeToRealtimeMessages(broadcast);
+/**
+ * Standalone entrypoint: `npm run ws-server` runs the gateway as its own
+ * process on its own port — still supported for a multi-process deploy,
+ * or if you'd rather run it separately locally. The merged single-process
+ * deploy (server.ts, `npm run dev`/`npm start`) calls
+ * attachWebSocketGateway() directly instead of this file at all.
+ */
+function startStandalone() {
+  const server = createServer();
+  attachWebSocketGateway(server);
+  server.listen(PORT, () => logger.info("websocket_gateway_started", { port: PORT }));
 
-async function shutdown() {
-  logger.info("websocket_gateway_shutting_down", {});
-  await unsubscribe();
-  await prisma.$disconnect();
-  process.exit(0);
+  async function shutdown() {
+    logger.info("websocket_gateway_shutting_down", {});
+    await prisma.$disconnect();
+    process.exit(0);
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+if (require.main === module) {
+  startStandalone();
+}

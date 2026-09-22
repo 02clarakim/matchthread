@@ -229,7 +229,7 @@ async function refreshWindowIfStale(): Promise<void> {
   }
 }
 
-async function startPolling(): Promise<void> {
+export async function startPolling(): Promise<void> {
   logger.info("espn_live_poller_started", {
     liveIntervalMs: LIVE_POLL_INTERVAL_MS,
     fixtureCheckIntervalMs: FIXTURE_CHECK_INTERVAL_MS,
