@@ -19,7 +19,15 @@ services:
     name: matchthread
     runtime: node
     plan: free # switch to `starter` ($7/mo) later for no idle spin-down — see DEPLOY.md; no code change needed either way
-    buildCommand: npm ci && npx prisma generate && npm run build
+    # --include=dev: `NODE_ENV=production` is already set (below) by the
+    # time this runs, and npm's default is to skip devDependencies when
+    # that's set — but `next build` genuinely needs several of them
+    # (typescript, tailwindcss, @tailwindcss/postcss) to actually build,
+    # not just to develop. Confirmed live: without this flag, the build
+    # fails on "Cannot find module '@tailwindcss/postcss'". The extra
+    # packages aren't removed afterward, but that costs nothing at
+    # runtime beyond a slightly larger image.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
