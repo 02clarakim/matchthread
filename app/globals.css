@@ -68,3 +68,48 @@ body {
 .animate-slide-in {
   animation: slide-in 0.25s ease-out;
 }
+
+/* Landing-page entrance animation — content starts from this state via
+   `animation-fill-mode: both`, so there's no flash-of-unstyled-content
+   before the animation kicks in. Stagger with an inline animationDelay. */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up {
+    animation-duration: 0.01ms;
+  }
+}
+
+/* Slow decorative drift for the glow behind the landing-page hero. */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(-50%, -33%) scale(1);
+  }
+  50% {
+    transform: translate(-48%, -36%) scale(1.08);
+  }
+}
+
+.animate-drift {
+  animation: drift 12s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift {
+    animation: none;
+  }
+}

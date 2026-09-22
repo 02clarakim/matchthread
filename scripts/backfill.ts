@@ -6,9 +6,10 @@ import { redis, redisPublisher } from "../lib/redis/client";
 import { logger } from "../lib/logger";
 import { fetchEspnScoreboard, fetchEspnMatch, isLeagueFixture } from "../lib/sports/espn";
 import { EspnResolver } from "../lib/sports/espn-resolve";
-import { upsertEspnMatch, ingestEspnMatchDetail, goalExternalId } from "../lib/sports/espn-ingest";
+import { upsertEspnMatch, ingestEspnMatchDetail } from "../lib/sports/espn-ingest";
 import { waitForPendingBackgroundWork } from "../lib/sports/ingest";
-import { verifyGoals, clipsForMatch, type ClipInput } from "../lib/matching/verify-goals";
+import { clipsForMatch, type ClipInput } from "../lib/matching/verify-goals";
+import { verifyAndAttachClips } from "../lib/matching/attach-clip";
 
 /**
  * On-demand backfill of finished + upcoming fixtures for whole leagues,
@@ -31,6 +32,25 @@ function arg(name: string, fallback?: string): string | undefined {
 
 function yyyymmdd(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+/**
+ * ESPN's multi-day range query (`dates=YYYYMMDD-YYYYMMDD`) started
+ * returning 400 for any span (even 2 days) as of 2026-09-21 — confirmed by
+ * hand against the live API. Loop single-day calls instead; slower, but
+ * each date is a call this endpoint still actually accepts.
+ */
+async function fetchRangeByDay(league: string, from: Date, to: Date) {
+  const out: Awaited<ReturnType<typeof fetchEspnScoreboard>> = [];
+  for (let d = new Date(from); d <= to; d = new Date(d.getTime() + 86_400_000)) {
+    try {
+      out.push(...(await fetchEspnScoreboard(league, yyyymmdd(d))));
+    } catch (err) {
+      logger.warn("backfill_day_fetch_failed", { league, date: yyyymmdd(d), error: String(err) });
+    }
+    await sleep(80);
+  }
+  return out;
 }
 
 interface ClipSnapshot {
@@ -77,18 +97,23 @@ async function main() {
   const now = new Date();
   const from = new Date(now.getTime() - past * 86_400_000);
   const to = new Date(now.getTime() + future * 86_400_000);
-  const dates = `${yyyymmdd(from)}-${yyyymmdd(to)}`;
 
   const resolver = new EspnResolver(prisma);
   const clipSnapshots = withClips ? loadClipSnapshots() : [];
   const clipMedia = withClips ? loadClipMedia() : {};
-  logger.info("backfill_started", { leagues: leagues.join(","), dates, withClips, dryRun });
+  logger.info("backfill_started", {
+    leagues: leagues.join(","),
+    from: yyyymmdd(from),
+    to: yyyymmdd(to),
+    withClips,
+    dryRun,
+  });
 
   let summaryBudget = summaryCap;
   const tally = { matches: 0, scheduled: 0, finished: 0, goals: 0, cards: 0, subs: 0, vars: 0, clipsAttached: 0, clipFailures: 0 };
 
   for (const league of leagues) {
-    const fixtures = (await fetchEspnScoreboard(league, dates)).filter(isLeagueFixture);
+    const fixtures = (await fetchRangeByDay(league, from, to)).filter(isLeagueFixture);
     const leagueClips = clipSnapshots.filter((s) => s.league === league).flatMap((s) => s.clips.map(toClipInput));
     console.log(`\n=== ${league}  (${fixtures.length} fixtures, ${leagueClips.length} clip candidates) ===`);
 
@@ -135,25 +160,22 @@ async function main() {
       if (withClips && leagueClips.length && sb.status === "FINISHED") {
         const matchClips = clipsForMatch(leagueClips, m.homeTeamName, m.awayTeamName);
         if (matchClips.length) {
-          const result = verifyGoals(summary.goals, matchClips);
           // Attach clips that agree with ESPN. A clip that *contradicts* ESPN
           // (wrong scorer near the right minute) is only attached with --force;
           // its discrepancy is always reported.
-          let attached = 0;
-          for (const gv of result.goals) {
-            const attachable = gv.status === "verified" || (gv.status === "clip-mismatch" && force);
-            if (!attachable || !gv.clip) continue;
-            const eventId = goalEventIdByExternalId.get(goalExternalId(sb.espnEventId, gv.espn));
-            if (!eventId) continue;
-            for (const clip of [gv.clip, ...gv.extraClips]) {
-              await attachClip(m.matchId, eventId, clip, clipMedia[clip.postId]);
-              attached += 1;
-            }
-          }
+          const { attached, verified, discrepancy } = await verifyAndAttachClips(
+            m.matchId,
+            sb.espnEventId,
+            summary.goals,
+            matchClips,
+            goalEventIdByExternalId,
+            clipMedia,
+            { force }
+          );
           tally.clipsAttached += attached;
-          if (!result.verified) {
+          if (!verified) {
             tally.clipFailures += 1;
-            clipNote = `   ▶ ${attached}/${summary.goals.length} clips · ⚠ ${result.discrepancies[0] ?? "discrepancy"}`;
+            clipNote = `   ▶ ${attached}/${summary.goals.length} clips · ⚠ ${discrepancy}`;
           } else {
             clipNote = `   ▶ ${attached}/${summary.goals.length} clips`;
           }
@@ -172,46 +194,6 @@ async function main() {
       (tally.clipFailures ? `, ${tally.clipFailures} matches with unverified clips` : "") +
       `\n`
   );
-}
-
-async function attachClip(
-  matchId: string,
-  eventId: string,
-  clip: ClipInput,
-  media?: { url: string; host: string }
-): Promise<void> {
-  const embedUrl = `https://www.redditmedia.com${clip.permalink}?ref_source=embed&ref=share&embed=true`;
-  // Native Reddit video embeds inline; an external clip host (streamin.link,
-  // streamff, …) can't be framed cleanly, so record its direct URL and the
-  // UI offers a one-click "watch" straight to it instead of a nested card.
-  const isExternalHost = Boolean(media && media.host !== "v.redd.it");
-  const fields = {
-    mediaUrl: embedUrl,
-    mediaType: "VIDEO" as const,
-    clipUrl: isExternalHost ? media!.url : null,
-    clipHost: media?.host ?? null,
-  };
-
-  const socialPost = await prisma.socialPost.upsert({
-    where: { source_externalId: { source: "REDDIT", externalId: clip.postId } },
-    create: {
-      source: "REDDIT",
-      externalId: clip.postId,
-      matchId,
-      title: clip.title,
-      body: null,
-      author: clip.author,
-      url: `https://www.reddit.com${clip.permalink}`,
-      createdAt: new Date(clip.createdAt),
-      ...fields,
-    },
-    update: { matchId, ...fields },
-  });
-  await prisma.eventSocialMatch.upsert({
-    where: { eventId_socialPostId: { eventId, socialPostId: socialPost.id } },
-    create: { eventId, socialPostId: socialPost.id, score: 1, matchingMethod: "DETERMINISTIC" },
-    update: {},
-  });
 }
 
 main()

@@ -1,6 +1,6 @@
-# MatchPulse
+# MatchThread
 
-**A real-time football social-intelligence platform.** MatchPulse connects live match events with plain-English commentary and community reactions, so a fan watching a goal go in doesn't have to tab-switch between a score app, X, Reddit, and YouTube to understand what happened and what people think about it.
+**A real-time football social-intelligence platform.** MatchThread connects live match events with plain-English commentary and community reactions, so a fan watching a goal go in doesn't have to tab-switch between a score app, X, Reddit, and YouTube to understand what happened and what people think about it.
 
 > Something happens → explain what happened → show the reaction → point to the clip. All in one feed, updating live, no refresh.
 
@@ -229,6 +229,13 @@ erDiagram
 
 **Progressive updates** are the product's core UX idea, not just a technical detail: `lib/sports/ingest.ts` persists a new event and publishes `match_event` *before* kicking off commentary retrieval or social search — those run as tracked fire-and-forget work and publish their own `commentary_update` / `highlight_update` messages when they finish. The UI never blocks the scoreboard on a Reddit search.
 
+**Matchday-aware polling** (`workers/espn-live-poller.ts`): polling ESPN every minute, all day, every day, wastes almost every call — confirmed against real fixture data (71 days, both leagues) rather than assumed. Findings: ~56% of calendar days have no Premier League/La Liga fixture at all; on days that do, kickoffs cluster inside a real window (roughly 11:00–19:00 UTC for kickoff time, ~11:00–21:30 UTC once padded for match length) rather than being spread evenly through the day or weekend-only (30% of matches are actually midweek). So the poller runs in two tiers:
+
+1. **Tier 1, cheap and infrequent** (`computeTodaysWindow`, every 6h): a single-day ESPN scoreboard call per league for yesterday/today/tomorrow computes today's padded kickoff window — or confirms there isn't one.
+2. **Tier 2, the real live loop:** only *inside* that window does the tight interval (`ESPN_POLL_INTERVAL_MS`, default 2 min) actually run. Outside it — including every non-match day — the poller sleeps at a 15-minute idle check instead, touching ESPN only for the periodic tier-1 refresh.
+
+The number of concurrent matches doesn't change the call cost either way — one scoreboard call returns every fixture for that league/day regardless of whether it's 1 game or 10 — so the lever that matters is *whether there's a live window right now*, not how many games happen to be in it. Net effect: a non-match day goes from ~2,880 calls to essentially the tier-1 check only; a heavy Saturday still gets a ~78% cut over naive 24/7 polling while keeping the same 2-minute freshness during actual play. (Separately: ESPN's multi-day range query, `dates=YYYYMMDD-YYYYMMDD`, started returning `400` for any span as of 2026-09-21 — confirmed by hand, not assumed — so every ESPN fetch in this codebase, including `scripts/backfill.ts`, now loops single-day calls instead of requesting a range.)
+
 ---
 
 ## Commentary Architecture
@@ -288,11 +295,11 @@ semantic similarity    15%   (renormalized out of the total when AI wasn't used)
 
 Live match detection (score, minute, status, goals/cards/subs/VAR) is ESPN's job alone now — `workers/espn-live-poller.ts` polls ESPN's free scoreboard/summary endpoints (see [Architecture](#architecture)) and needs no API key or Reddit involvement at all. Reddit's role is narrower and more specific: **sourcing the embeddable clip for a goal ESPN already told us about.**
 
-**Why this isn't a live per-request Reddit search:** an earlier version of this project searched Reddit's OAuth API (`client_credentials` grant, a registered "script" app) once per event, live, at ingest time. That path (`lib/reddit/client.ts`, `workers/social-ingestion.ts`, `workers/reddit-live-poller.ts`) has been removed — it needed a Reddit app registration this project never actually configured (no `REDDIT_CLIENT_ID`/`SECRET` was ever set, in dev or otherwise), and running a live search on every goal is more moving parts than the payoff justifies for a portfolio-scope demo. What actually populates real clips today, successfully, is simpler:
+**Why this isn't a live per-request Reddit search:** an earlier version of this project searched Reddit's own OAuth API (`client_credentials` grant, a registered "script" app) once per event, live, at ingest time. That path (`lib/reddit/client.ts`, `workers/social-ingestion.ts`, `workers/reddit-live-poller.ts`) was removed — it needed a Reddit app registration this project never actually configured, and running a live search on every single goal is more moving parts than the payoff justifies. What replaced it uses [FetchLayer](https://fetchlayer.dev) instead — a hosted REST API that returns structured Reddit data behind one Bearer-token key, no OAuth, no per-platform app registration — and splits into a manual verified path and an automated one that shares almost all of its code with the manual path:
 
-1. **Scrape ahead of time.** r/soccer's `"Goal Clip"` flair posts for a given matchweek are captured via the fetchlayer MCP tool (interactively, by asking Claude Code to re-scrape) into flat JSON snapshots under `data/reddit-clips/` — real post titles, permalinks, authors, timestamps, checked into the repo.
-2. **Assign and verify.** `scripts/backfill.ts --clips` parses each snapshot's title against r/soccer's actual "Goal Clip" convention, assigns it to the matching ESPN fixture, and **cross-checks it against ESPN's own goal list** (`lib/matching/verify-goals.ts`) before attaching anything — a clip that contradicts ESPN's scorer/minute is flagged, not silently trusted (see `--force` to attach it anyway).
-3. **Resolve the media.** `scripts/resolve-clip-media.ts` / `lib/reddit/resolve-post-media.ts` turn a bare Reddit permalink into a directly embeddable URL — `embed.reddit.com`'s markup exposes the post's true outbound link via a plain `fetch()` (no Reddit API needed for this step either), and known clip-mirror hosts (streamff, streamin, …) get their direct `.mp4` resolved the same way.
+1. **Find the posts.** Either a one-off manual scrape (`data/reddit-clips/*.json`, captured ahead of time via the fetchlayer MCP tool — see `scripts/backfill.ts --clips`), or **`workers/reddit-clip-poller.ts`**, which calls FetchLayer's real REST endpoint (`lib/reddit/fetchlayer-client.ts`, `POST https://api.fetchlayer.dev/reddit/search`) automatically once a day, no Claude Code session involved. One call returns every r/soccer `"Goal Clip"` post from the last 24 hours across *every* match at once — cost is per-request, not per-goal, so a heavier match day doesn't need more calls, only whether to call at all (same principle as [ESPN's polling below](#real-time-architecture)). Scheduled to fire only on an actual match day, right after that day's matches finish — reusing `espn-live-poller.ts`'s own kickoff-window computation so it isn't guessing when "today" is over. Pay-as-you-go, ~$0.002/request: at one call a day, this runs to cents a month. No `FETCHLAYER_API_KEY` set → the worker logs "unconfigured" and does nothing, same graceful-skip as every other optional provider here; the manual path still works either way.
+2. **Assign and verify.** Both paths converge on the same code from here: `clipsForMatch`/`verifyGoals` (`lib/matching/verify-goals.ts`) match each candidate's title against r/soccer's actual "Goal Clip" convention and **cross-check it against ESPN's own goal list** before anything is attached — a clip that contradicts ESPN's scorer/minute is flagged, not silently trusted. `lib/matching/attach-clip.ts#verifyAndAttachClips` is the single shared function that runs this and writes the result, called by both `scripts/backfill.ts` and the automated worker so there's exactly one place that decides what counts as verified.
+3. **Resolve the media.** `lib/reddit/resolve-social-post-media.ts` turns a bare Reddit permalink into a directly embeddable URL — `embed.reddit.com`'s markup exposes the post's true outbound link via a plain `fetch()` (no API key needed for this step, FetchLayer or otherwise), and known clip-mirror hosts (streamff, streamin, …) get their direct `.mp4` resolved the same way. Also shared: `scripts/resolve-clip-media.ts` (batch, for the manual path) and the automated worker both call this same function.
 
 **Goal title parsing targets r/soccer's actual "Goal Clip" convention**, confirmed against real examples rather than guessed:
 
@@ -304,7 +311,7 @@ Bayern [5] - 1 Stuttgart - Luis Diaz 93' (Amazing pass from Saibari)
 
 The scoring team's number is wrapped in **`[brackets]`** — an explicit, unambiguous "who scored" signal, which `parseGoalClipTitle()` reads directly rather than inferring. From the same title it also pulls minute (including stoppage time, `90+5`), player name, and a `Penalty` flag (→ event type `PENALTY_GOAL` instead of `GOAL`). All three examples above, plus a fourth with no brackets at all, are asserted verbatim in `tests/unit/reddit-goal-clip-parser.test.ts`. The flair string itself (`GOAL_CLIP_FLAIR`) **was** confirmed against a live r/soccer search on 2026-09-02: the indexed flair name carries the `:n_goal:` emoji shortcode, so `flair_name:"Goal Clip"` returns nothing while `flair_name:":n_goal: Goal Clip"` returns real goal-clip posts.
 
-**What this means in practice:** new real-world goals get a real Reddit clip when someone (a developer, or Claude Code on request) re-runs the scrape-and-backfill cycle for that matchweek — it's a deliberate, verified, low-volume batch step, not an always-on live feed. `npm run simulate-event -- --type=goal` remains the reliable way to demo the end-to-end live pipeline (event → commentary → highlight → WebSocket) for a goal that doesn't have a real backfilled clip yet. Yellow cards, substitutions, and VAR decisions never had a Reddit clip signal to begin with (no dedicated flair exists) — ESPN's own summary feed is the only source for those event types.
+**What this means in practice:** with `FETCHLAYER_API_KEY` set, new real-world goals get a real Reddit clip automatically, once a day, no manual step required. Without it, the manual scrape-and-backfill cycle for a given matchweek still works exactly as before — it's the same verification code either way. `npm run simulate-event -- --type=goal` remains the reliable way to demo the end-to-end live pipeline (event → commentary → highlight → WebSocket) for a goal that doesn't have a real clip attached yet. Yellow cards, substitutions, and VAR decisions never had a Reddit clip signal to begin with (no dedicated flair exists) — ESPN's own summary feed is the only source for those event types.
 
 ---
 
@@ -322,6 +329,7 @@ This is proven, not just asserted: `npm run simulate-event -- --replay` re-sends
 
 - **ESPN API down:** `lib/sports/espn.ts`'s fetch calls (`fetchEspnScoreboard`, `fetchEspnMatch`, `fetchEspnTeams`) each go through `fetchWithRetry` (2-3 retries, exponential backoff) and return `[]`/`null`/throw on final failure, caught in `workers/espn-live-poller.ts` and `scripts/backfill.ts` per-fixture — one bad match in a poll cycle doesn't stop the rest from processing.
 - **AI provider down/unconfigured:** see [AI Matching](#ai-matching) — silent fallback to fuzzy-only scoring for candidate matching, and to the generated template for commentary (see [Commentary Architecture](#commentary-architecture)).
+- **FetchLayer down/unconfigured:** `searchGoalClipPosts()` returns `[]` on any non-200 response or network error — the poller logs it and simply attaches nothing that day; the manual scrape-and-backfill path is unaffected (see [Reddit-Sourced Goal Clips](#reddit-sourced-goal-clips)).
 - **WebSocket disconnects:** client reconnects with exponential backoff (capped at 15s) and re-subscribes; the gateway itself is stateless per-connection, so a reconnect is just a fresh subscribe.
 - **A background trigger outliving its caller:** short-lived scripts (`seed.ts`, `simulate-event.ts`) fire commentary work without awaiting it inline (so the *interactive* pipeline stays non-blocking) but track those promises via `waitForPendingBackgroundWork()` and wait for them before disconnecting Prisma/Redis — otherwise the process could exit mid-query. This is a real bug I hit and fixed while building this: the first version disconnected immediately and the in-flight commentary query died with an opaque Prisma engine error.
 
@@ -366,15 +374,23 @@ npm run dev                 # Next.js app  — http://localhost:3000
 npm run ws-server           # WebSocket gateway (separate terminal) — ws://localhost:4001
 ```
 
-Optional, for a live (non-demo) match feed — free, keyless, no account/registration needed:
+Optional, for a live (non-demo) match feed — free, keyless, no account/registration needed. Runs on a matchday-aware schedule, not a fixed interval — see [Matchday-aware polling](#real-time-architecture):
 
 ```bash
 npm run worker:espn-live-poller     # live scores/goals/cards/subs/VAR from ESPN's free API
 ```
 
+Also optional, for automated Reddit goal clips — needs `FETCHLAYER_API_KEY` (see [Reddit-Sourced
+Goal Clips](#reddit-sourced-goal-clips)); without it, it logs "unconfigured" and does nothing,
+same graceful-skip as every other optional provider here:
+
+```bash
+npm run worker:reddit-clip-poller   # attaches real Reddit clips once a day, on match days only
+```
+
 To backfill real historical fixtures (with verified scorers/cards) and, optionally, real Reddit
-goal clips — see [Reddit-Sourced Goal Clips](#reddit-sourced-goal-clips) for how the clip snapshot
-step works:
+goal clips from a manually-scraped snapshot — see [Reddit-Sourced Goal Clips](#reddit-sourced-goal-clips)
+for how that step works:
 
 ```bash
 npm run backfill -- --league=eng.1 --clips   # ESPN fixtures + scored/verified events
@@ -396,7 +412,7 @@ npm run db:studio                       # Prisma Studio, browse the DB
 
 ## Environment Variables
 
-See `.env.example` for the full list with inline documentation. Nothing beyond `DATABASE_URL`, `REDIS_URL`, and `AUTH_SECRET` is required to run the full demo experience, including live ESPN-sourced matches — `OPENAI_API_KEY` is the only other variable, and it's optional, with documented graceful fallback when unset (see [Reliability](#reliability)).
+See `.env.example` for the full list with inline documentation. Nothing beyond `DATABASE_URL`, `REDIS_URL`, and `AUTH_SECRET` is required to run the full demo experience, including live ESPN-sourced matches — `OPENAI_API_KEY` (LLM commentary + AI matching) and `FETCHLAYER_API_KEY` (automated Reddit goal clips) are the only other variables, both optional, with documented graceful fallback when unset (see [Reliability](#reliability)).
 
 ## Demo Mode
 
@@ -445,8 +461,8 @@ app/           Next.js App Router — pages + API routes
 components/    React components (match, feed, teams, commentary, social, auth, ui)
 lib/           Provider-agnostic business logic — db, redis, auth, sports, reddit, social,
                commentary, matching, websocket, http, logger
-workers/       Standalone/background processes — espn-live-poller, commentary-worker,
-               event-processor, ws-server
+workers/       Standalone/background processes — espn-live-poller, reddit-clip-poller,
+               commentary-worker, event-processor, ws-server
 prisma/        Schema + migrations
 scripts/       seed.ts, simulate-event.ts, backfill.ts, resolve-clip-media.ts, regenerate-commentary.ts
 tests/         unit/, integration/, api/

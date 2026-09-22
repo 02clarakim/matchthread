@@ -6,7 +6,10 @@ import { subscribeToRealtimeMessages, type RealtimeMessage } from "../lib/redis/
 import { verifyWsToken } from "../lib/websocket/token";
 import { isClientMessage, type ServerMessage } from "../lib/websocket/protocol";
 
-const PORT = Number(process.env.WS_PORT ?? 4001);
+// Render (and most PaaS web-service hosts) assign the listening port via
+// PORT, not a custom var — check it first so this binds correctly there,
+// while WS_PORT keeps working for local dev (see .env.example).
+const PORT = Number(process.env.PORT ?? process.env.WS_PORT ?? 4001);
 
 interface ClientState {
   userId: string | null;
