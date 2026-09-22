@@ -24,12 +24,17 @@ import { upsertEspnMatch, ingestEspnMatchDetail } from "../lib/sports/espn-inges
  *
  * Matchday-aware scheduling (the actual point of this file, beyond the
  * per-fixture logic above): Premier League + La Liga kickoffs cluster
- * inside a real, data-derived window — roughly 11:00-19:00 UTC for kickoff
- * time, so accounting for match length the "something could be live" window
- * runs about 11:00-21:30 UTC on an actual match day — and a large share of
- * calendar days have no fixture at all. Polling every minute around the
- * clock, every day, wastes the vast majority of calls on hours/days where
- * nothing is happening. Instead:
+ * inside a real, data-derived window — confirmed against 71 days of actual
+ * fixtures, roughly 11:00-19:00 UTC for kickoff time, so accounting for
+ * match length the "something could be live" window runs about
+ * 11:00-21:30 UTC on an actual match day — and a large share of calendar
+ * days have no fixture at all. Bundesliga (added to the default
+ * ESPN_LEAGUES since) follows the same Saturday/Sunday European kickoff
+ * convention closely enough that the same buffers apply safely, though
+ * its exact kickoff-hour distribution hasn't been independently confirmed
+ * the way PL/La Liga's was. Polling every minute around the clock, every
+ * day, wastes the vast majority of calls on hours/days where nothing is
+ * happening. Instead:
  *
  *   1. TIER 1 (cheap, infrequent): every FIXTURE_CHECK_INTERVAL_MS, fetch
  *      today's (and a one-day pad either side, for matches whose kickoff
@@ -38,7 +43,7 @@ import { upsertEspnMatch, ingestEspnMatchDetail } from "../lib/sports/espn-inges
  *      up postponements/reschedules without a restart.
  *   2. TIER 2 (the real live loop): only inside that computed window does
  *      the LIVE_POLL_INTERVAL_MS loop actually run. Outside it — including
- *      the ~55% of days with no PL/La Liga fixture at all — the poller
+ *      the days with no fixture across any configured league at all — the poller
  *      sleeps at IDLE_CHECK_INTERVAL_MS instead, touching ESPN only for the
  *      periodic tier-1 refresh.
  *
@@ -54,7 +59,7 @@ const IDLE_CHECK_INTERVAL_MS = Number(process.env.ESPN_IDLE_CHECK_INTERVAL_MS ??
 const PRE_KICKOFF_BUFFER_MS = 5 * 60 * 1000;
 const POST_KICKOFF_BUFFER_MS = 130 * 60 * 1000; // 90 min + stoppage/HT/ET slack
 
-const LEAGUES = (process.env.ESPN_LEAGUES ?? "eng.1,esp.1").split(",").map((s) => s.trim());
+const LEAGUES = (process.env.ESPN_LEAGUES ?? "eng.1,esp.1,ger.1").split(",").map((s) => s.trim());
 
 function yyyymmdd(d: Date): string {
   return d.toISOString().slice(0, 10).replace(/-/g, "");

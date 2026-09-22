@@ -16,7 +16,7 @@ import { verifyAndAttachClips } from "../lib/matching/attach-clip";
  * straight from ESPN's free scoreboard API (no key). Optionally attaches
  * verified r/soccer goal clips from the snapshots in data/reddit-clips/.
  *
- *   npm run backfill                          # eng.1,esp.1 · past 35d + next 21d
+ *   npm run backfill                          # eng.1,esp.1,ger.1 · past 35d + next 21d
  *   npm run backfill -- --leagues=eng.1
  *   npm run backfill -- --past=45 --future=30
  *   npm run backfill -- --clips              # + attach Reddit goal clips
@@ -86,7 +86,7 @@ function loadClipMedia(): Record<string, { url: string; host: string }> {
 }
 
 async function main() {
-  const leagues = (arg("leagues", "eng.1,esp.1") as string).split(",").map((s) => s.trim());
+  const leagues = (arg("leagues", "eng.1,esp.1,ger.1") as string).split(",").map((s) => s.trim());
   const past = Number(arg("past", "35"));
   const future = Number(arg("future", "21"));
   const withClips = arg("clips") === "true";

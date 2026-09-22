@@ -15,21 +15,30 @@ import { computeTodaysWindow } from "./espn-live-poller";
  * (lib/reddit/fetchlayer-client.ts) directly — no Claude Code session
  * needed, genuinely schedulable from a Render background worker.
  *
- * Runs once per calendar day, and only on an actual match day — reusing
- * espn-live-poller.ts's own window computation to know when today's
- * matches have finished (its `end` already pads for stoppage/ET, so a
- * clip search fired then finds a full-time-settled match, not a live one).
- * A day with zero PL/La Liga fixtures never calls FetchLayer at all.
+ * Runs every REDDIT_CLIP_POLL_INTERVAL_MS *throughout* today's match
+ * window (reusing espn-live-poller.ts's own window computation — same
+ * padded kickoff-to-full-time span used for live ESPN polling), not just
+ * once at the end of the day. A goal's Reddit clip usually exists within
+ * minutes of the goal; polling only once after the last match finishes
+ * meant a fan could wait most of the day to see a clip that was already
+ * postable hours earlier. Outside today's window — including every
+ * non-match day — this idles at CHECK_INTERVAL_MS and calls FetchLayer
+ * zero times.
  *
- * One search call covers the ENTIRE day's Goal Clip posts across every
- * match at once (see fetchlayer-client.ts) — a heavier match day (more
- * games) doesn't need more calls, since the cost is per-request, not
- * per-goal. That's the same principle behind espn-live-poller.ts's
- * game-count-independent polling: the lever that matters is whether to
- * poll at all today, not how many games happened to be on.
+ * Searches PER MATCH (fetchlayer-client.ts#searchGoalClipPosts), not once
+ * globally per day — confirmed live that a `flair_name:"Goal Clip"` query
+ * doesn't reliably find real posts (Reddit's search doesn't index flair as
+ * searchable text), and combined with team names it returns zero results
+ * even for a match with several real posts. A plain "{home} {away}" query
+ * does find them. Each poll tick only searches matches that don't already
+ * have a Reddit clip (matchIdsWithClips), so a match stops costing calls
+ * the moment it's covered — still cheap (a handful of matches × a few
+ * polls per match day, at ~$0.002/request), just no longer "one call
+ * covers everything."
  */
 
-const CHECK_INTERVAL_MS = Number(process.env.REDDIT_CLIP_CHECK_INTERVAL_MS ?? 15 * 60 * 1000); // 15 min
+const POLL_INTERVAL_MS = Number(process.env.REDDIT_CLIP_POLL_INTERVAL_MS ?? 30 * 60 * 1000); // 30 min, while inside today's match window
+const CHECK_INTERVAL_MS = Number(process.env.REDDIT_CLIP_CHECK_INTERVAL_MS ?? 15 * 60 * 1000); // 15 min, while idle (no window yet/today, or none at all)
 const LEAGUE_SLUG_BY_NAME = Object.fromEntries(Object.entries(LEAGUE_NAMES).map(([slug, name]) => [name, slug]));
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -54,21 +63,37 @@ async function todaysFinishedMatches() {
   });
 }
 
+/** Matches already have at least one Reddit clip — no point re-searching them again this run or next. */
+async function matchIdsWithClips(matchIds: string[]): Promise<Set<string>> {
+  const rows = await prisma.socialPost.findMany({
+    where: { source: "REDDIT", matchId: { in: matchIds } },
+    select: { matchId: true },
+  });
+  return new Set(rows.map((r) => r.matchId).filter((id): id is string => id !== null));
+}
+
 export async function runOnce(): Promise<void> {
   if (!isFetchlayerConfigured()) {
     logger.info("reddit_clip_poller_skipped_unconfigured");
     return;
   }
 
-  const clips = await searchGoalClipPosts();
-  logger.info("reddit_clip_search_completed", { candidates: clips.length });
-  if (clips.length === 0) return;
+  const allMatches = await todaysFinishedMatches();
+  const alreadyHaveClips = await matchIdsWithClips(allMatches.map((m) => m.id));
+  const matches = allMatches.filter((m) => !alreadyHaveClips.has(m.id));
+  logger.info("reddit_clip_poller_run_started", {
+    finishedToday: allMatches.length,
+    alreadyHaveClips: alreadyHaveClips.size,
+    toSearch: matches.length,
+  });
 
-  const matches = await todaysFinishedMatches();
   let matchesWithClips = 0;
   let totalAttached = 0;
 
   for (const m of matches) {
+    // One search per match — see fetchlayer-client.ts for why this can't be
+    // a single query covering the whole day.
+    const clips = await searchGoalClipPosts(m.homeTeam.name, m.awayTeam.name);
     const matchClips = clipsForMatch(clips, m.homeTeam.name, m.awayTeam.name);
     if (matchClips.length === 0) continue;
 
@@ -91,13 +116,13 @@ export async function runOnce(): Promise<void> {
         teamExternalIdByEspnId
       );
 
-      const { attached, verified, discrepancy } = await verifyAndAttachClips(
+      const { attached, verified, discrepancy, attachedPostIds } = await verifyAndAttachClips(
         m.id,
         espnEventId,
         summary.goals,
         matchClips,
         goalEventIdByExternalId,
-        {} // media resolved just below, not pre-loaded like backfill.ts's static snapshot
+        {} // media resolved immediately below, not pre-loaded like backfill.ts's static snapshot
       );
       if (attached > 0) {
         matchesWithClips += 1;
@@ -111,16 +136,30 @@ export async function runOnce(): Promise<void> {
         verified,
         discrepancy,
       });
+
+      // Resolve right away, in the same iteration — a clip that sits
+      // attached-but-unresolved for a while renders as a broken "native
+      // Reddit" iframe in the UI (the frontend can't tell "not yet
+      // resolved" from "genuinely native" until clipHost is actually set;
+      // see lib/matching/attach-clip.ts). Resolving immediately keeps that
+      // window as short as possible instead of deferring every match's
+      // clips to one batch pass at the very end of the run.
+      for (const postId of attachedPostIds) {
+        await resolveAndPersistClipMedia(postId);
+        await sleep(80);
+      }
     } catch (err) {
       logger.warn("reddit_clip_match_failed", { matchId: m.id, error: String(err) });
     }
   }
 
-  // Resolve every still-unresolved attached clip (today's new ones, plus any
-  // stray from a previous run that failed transiently) to a playable
-  // inline video — same two-step, no-API-key resolution the backfill uses.
+  // Safety net for anything that failed to resolve above (transient
+  // network error, etc.) or was left over from an interrupted previous
+  // run. Explicit OR because `clipHost: { not: "v.redd.it" }` alone
+  // silently excludes NULL rows (SQL's <> never matches NULL) — a real
+  // bug found live: it meant a never-resolved clip was never retried.
   const pending = await prisma.socialPost.findMany({
-    where: { source: "REDDIT", videoUrl: null, clipHost: { not: "v.redd.it" } },
+    where: { source: "REDDIT", videoUrl: null, OR: [{ clipHost: null }, { clipHost: { not: "v.redd.it" } }] },
     select: { id: true },
   });
   let resolved = 0;
@@ -131,8 +170,7 @@ export async function runOnce(): Promise<void> {
   }
 
   logger.info("reddit_clip_poller_run_completed", {
-    candidates: clips.length,
-    matchesChecked: matches.length,
+    matchesSearched: matches.length,
     matchesWithClips,
     totalAttached,
     resolved,
@@ -140,30 +178,57 @@ export async function runOnce(): Promise<void> {
   });
 }
 
-let lastRunDate: string | null = null;
+type Window = Awaited<ReturnType<typeof computeTodaysWindow>>;
+
+/**
+ * Pure scheduling decision, separated out so it's testable without mocking
+ * timers or the network: run now only if `now` falls inside the window AND
+ * either this is the first run of the day (lastRunAt null) or a full
+ * interval has elapsed since the last one.
+ */
+export function shouldRunNow(window: Window, now: number, lastRunAt: number | null, pollIntervalMs: number): boolean {
+  if (!window) return false;
+  const insideWindow = now >= window.start.getTime() && now <= window.end.getTime();
+  const dueForRun = lastRunAt === null || now - lastRunAt >= pollIntervalMs;
+  return insideWindow && dueForRun;
+}
+
+let windowCheckedForDate: string | null = null;
+let currentWindow: Window = null;
+let lastRunAt: number | null = null;
 
 async function startPolling(): Promise<void> {
   logger.info("reddit_clip_poller_started", {
+    pollIntervalMs: POLL_INTERVAL_MS,
     checkIntervalMs: CHECK_INTERVAL_MS,
     configured: isFetchlayerConfigured(),
   });
 
   for (;;) {
     try {
-      const window = await computeTodaysWindow();
       const today = todayDateKey();
-      const pastTodaysWindow = window !== null && Date.now() > window.end.getTime();
+      if (windowCheckedForDate !== today) {
+        currentWindow = await computeTodaysWindow();
+        windowCheckedForDate = today;
+        lastRunAt = null; // fresh day — first run inside the window shouldn't wait a full interval
+        logger.info("reddit_clip_window_computed", {
+          fixtures: currentWindow?.fixtureCount ?? 0,
+          windowStart: currentWindow?.start.toISOString() ?? null,
+          windowEnd: currentWindow?.end.toISOString() ?? null,
+        });
+      }
 
-      if (pastTodaysWindow && lastRunDate !== today) {
-        lastRunDate = today; // set before running: a failed run shouldn't retry-loop every 15min for the rest of the day
+      const now = Date.now();
+      if (shouldRunNow(currentWindow, now, lastRunAt, POLL_INTERVAL_MS)) {
+        lastRunAt = now; // set before running: a failed run shouldn't retry-loop before the next interval is actually due
         await runOnce();
-      } else if (!window) {
+      } else if (!currentWindow) {
         logger.info("reddit_clip_poller_idle_no_fixtures_today");
       }
     } catch (err) {
       logger.error("reddit_clip_poller_cycle_failed", { error: String(err) });
     }
-    await sleep(CHECK_INTERVAL_MS);
+    await sleep(Math.min(POLL_INTERVAL_MS, CHECK_INTERVAL_MS));
   }
 }
 

@@ -1,4 +1,5 @@
 import type { ClipInput } from "../matching/verify-goals";
+import { aliasesFor } from "../matching/team-aliases";
 import { logger } from "../logger";
 
 /**
@@ -8,8 +9,6 @@ import { logger } from "../logger";
  * an interactive Claude Code session), this REST endpoint is a normal HTTP
  * API any backend can call, which is what makes automating this
  * deployable rather than a manual "ask Claude Code to re-scrape" step.
- * Pay-as-you-go, ~$0.002/request — at roughly one call per match day (see
- * workers/reddit-clip-poller.ts), this runs to cents a month.
  *
  * Response shape confirmed against a live call during development: an
  * `items[]` array of post summaries (id, title, permalink, author,
@@ -18,10 +17,20 @@ import { logger } from "../logger";
  * runs on plain `fetch()` with no FetchLayer/Reddit-API dependency at all
  * (lib/reddit/resolve-post-media.ts, lib/reddit/resolve-clip.ts,
  * lib/matching/verify-goals.ts) and is unchanged by this file.
+ *
+ * IMPORTANT, confirmed live (not assumed): a `flair_name:"..."` query term
+ * does NOT reliably find real Goal Clip posts, and combined with team names
+ * it returns ZERO results even for a match with several real posts —
+ * Reddit's search appears to require a literal text match on every query
+ * term, and flair text isn't indexed as searchable content (a direct
+ * per-post fetch shows `flair: null` even on a post that visibly carries
+ * the Goal Clip flair on reddit.com). A plain "{home} {away}" team-name
+ * query, with no flair term at all, reliably surfaces real posts that the
+ * flair-only query missed entirely. So this searches **per match**, by
+ * team name, not once globally per day — see workers/reddit-clip-poller.ts.
  */
 
 const BASE = "https://api.fetchlayer.dev/reddit";
-const GOAL_CLIP_QUERY = 'flair_name:":n_goal: Goal Clip"';
 const SUBREDDIT = "soccer";
 
 export function isFetchlayerConfigured(): boolean {
@@ -48,14 +57,7 @@ function toRelativePermalink(absoluteOrRelative: string): string {
   }
 }
 
-/**
- * Every r/soccer "Goal Clip" post from the last 24 hours, across every
- * match — one call covers an entire match day regardless of how many
- * games were on, since the cost here is per-request, not per-goal.
- * lib/matching/verify-goals.ts's clipsForMatch() then sorts these by team
- * name locally, no extra network calls needed.
- */
-export async function searchGoalClipPosts(): Promise<ClipInput[]> {
+async function searchReddit(query: string, time: "day" | "week"): Promise<ClipInput[]> {
   const apiKey = process.env.FETCHLAYER_API_KEY;
   if (!apiKey) return [];
 
@@ -63,16 +65,10 @@ export async function searchGoalClipPosts(): Promise<ClipInput[]> {
     const res = await fetch(`${BASE}/search`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: GOAL_CLIP_QUERY,
-        subreddit: SUBREDDIT,
-        sort: "new",
-        time: "day",
-        limit: 100,
-      }),
+      body: JSON.stringify({ query, subreddit: SUBREDDIT, sort: "new", time, limit: 30 }),
     });
     if (!res.ok) {
-      logger.warn("fetchlayer_search_failed", { status: res.status });
+      logger.warn("fetchlayer_search_failed", { status: res.status, query });
       return [];
     }
     const data = (await res.json()) as FetchlayerSearchResponse;
@@ -89,7 +85,23 @@ export async function searchGoalClipPosts(): Promise<ClipInput[]> {
       })
     );
   } catch (err) {
-    logger.warn("fetchlayer_search_error", { error: String(err) });
+    logger.warn("fetchlayer_search_error", { error: String(err), query });
     return [];
   }
+}
+
+/**
+ * Every r/soccer post mentioning both teams from the last day (falls back
+ * to the last week if that turns up nothing — a goal from a match that
+ * kicked off late in the day can be just outside a strict 24h window by
+ * the time this runs). Deliberately no flair filter — see file doc
+ * comment. Returns a mixed bag (match threads, news, actual goal clips);
+ * lib/reddit/parse-goal-post.ts#parseGoalClipTitle downstream is what
+ * actually recognizes a real Goal Clip title and discards the rest.
+ */
+export async function searchGoalClipPosts(homeTeamName: string, awayTeamName: string): Promise<ClipInput[]> {
+  const query = `${aliasesFor(homeTeamName)[0]} ${aliasesFor(awayTeamName)[0]}`;
+  const dayResults = await searchReddit(query, "day");
+  if (dayResults.length > 0) return dayResults;
+  return searchReddit(query, "week");
 }

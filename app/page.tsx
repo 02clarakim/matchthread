@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db/prisma";
-import { matchWithTeams, serializeMatch } from "@/lib/db/match-includes";
+import { matchWithTeams, serializeMatch, type MatchWithTeams } from "@/lib/db/match-includes";
 import { ScoreHeader } from "@/components/match/score-header";
 import { EventItem } from "@/components/match/event-item";
 import { LiveNowBoard } from "@/components/match/live-now-board";
@@ -9,14 +9,45 @@ import { buttonClasses } from "@/components/ui/button";
 import { GOAL_EVENT_TYPES } from "@/lib/match-format";
 import type { ApiEvent } from "@/lib/types/api";
 
+/** A deliberately chosen match to lead with — real, verified data (not fabricated), just a specific pick instead of whatever the "most recent" heuristic below would land on. Unset (null) to always use the dynamic pick. */
+const FEATURED_MATCH_SLUG: string | null = "atletico-madrid-real-madrid-092026";
+
+/** Given a candidate match, its latest goal + best-matched Reddit highlight (if any) — never invented. */
+async function resolvePreview(candidate: MatchWithTeams) {
+  const [event, highlight] = await Promise.all([
+    prisma.matchEvent.findFirst({
+      where: { matchId: candidate.id, type: { in: GOAL_EVENT_TYPES } },
+      orderBy: { minute: "desc" },
+    }),
+    prisma.eventSocialMatch.findFirst({
+      where: { event: { matchId: candidate.id } },
+      include: { socialPost: true },
+      orderBy: { score: "desc" },
+    }),
+  ]);
+  if (!event) return null;
+  return { match: candidate, event, highlight };
+}
+
 /**
- * Finds a real match to preview — the most recently finished ESPN-sourced
- * match that has a goal, preferring one that also has a matched Reddit
- * highlight. Never fabricates a score or a clip: on a fresh database
- * (before any backfill/seed has run) this returns nulls and the page
- * shows an honest empty state instead of a fake "Arsenal 1-0 Chelsea".
+ * Finds a real match to preview — FEATURED_MATCH_SLUG if it's set and has a
+ * goal, otherwise the most recently finished ESPN-sourced match that has
+ * one, preferring one that also has a matched Reddit highlight. Never
+ * fabricates a score or a clip: on a fresh database (before any
+ * backfill/seed has run) this returns null and the page shows an honest
+ * empty state instead of a fake "Arsenal 1-0 Chelsea".
  */
 async function findPreviewMatch() {
+  if (FEATURED_MATCH_SLUG) {
+    const featured = await prisma.match
+      .findUnique({ where: { slug: FEATURED_MATCH_SLUG }, include: matchWithTeams })
+      .catch(() => null);
+    if (featured) {
+      const resolved = await resolvePreview(featured);
+      if (resolved) return resolved;
+    }
+  }
+
   const candidates = await prisma.match
     .findMany({
       where: {
@@ -30,28 +61,14 @@ async function findPreviewMatch() {
     })
     .catch(() => []);
 
-  let fallback: (typeof candidates)[number] | null = null;
-  let fallbackEvent: Awaited<ReturnType<typeof prisma.matchEvent.findFirst>> | null = null;
-
+  let fallback: Awaited<ReturnType<typeof resolvePreview>> | null = null;
   for (const candidate of candidates) {
-    const [event, highlight] = await Promise.all([
-      prisma.matchEvent.findFirst({
-        where: { matchId: candidate.id, type: { in: GOAL_EVENT_TYPES } },
-        orderBy: { minute: "desc" },
-      }),
-      prisma.eventSocialMatch.findFirst({
-        where: { event: { matchId: candidate.id } },
-        include: { socialPost: true },
-        orderBy: { score: "desc" },
-      }),
-    ]);
-    if (event && highlight) return { match: candidate, event, highlight };
-    if (event && !fallback) {
-      fallback = candidate;
-      fallbackEvent = event;
-    }
+    const resolved = await resolvePreview(candidate);
+    if (!resolved) continue;
+    if (resolved.highlight) return resolved;
+    if (!fallback) fallback = resolved;
   }
-  return fallback ? { match: fallback, event: fallbackEvent, highlight: null } : null;
+  return fallback;
 }
 
 export default async function LandingPage() {

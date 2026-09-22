@@ -24,7 +24,7 @@ describe("isFetchlayerConfigured / searchGoalClipPosts (graceful degradation)", 
     delete process.env.FETCHLAYER_API_KEY;
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const result = await searchGoalClipPosts();
+    const result = await searchGoalClipPosts("Arsenal", "Chelsea");
     expect(result).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -32,19 +32,19 @@ describe("isFetchlayerConfigured / searchGoalClipPosts (graceful degradation)", 
   it("returns [] (not a throw) when the API responds with an error status", async () => {
     process.env.FETCHLAYER_API_KEY = "ss-test-key";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
-    const result = await searchGoalClipPosts();
+    const result = await searchGoalClipPosts("Arsenal", "Chelsea");
     expect(result).toEqual([]);
   });
 
   it("returns [] (not a throw) on a network error", async () => {
     process.env.FETCHLAYER_API_KEY = "ss-test-key";
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
-    const result = await searchGoalClipPosts();
+    const result = await searchGoalClipPosts("Arsenal", "Chelsea");
     expect(result).toEqual([]);
   });
 });
 
-describe("searchGoalClipPosts mapping", () => {
+describe("searchGoalClipPosts", () => {
   const original = process.env.FETCHLAYER_API_KEY;
 
   beforeEach(() => {
@@ -76,7 +76,7 @@ describe("searchGoalClipPosts mapping", () => {
       })
     );
 
-    const [clip] = await searchGoalClipPosts();
+    const [clip] = await searchGoalClipPosts("Inter Miami", "San Diego FC");
     expect(clip).toEqual({
       postId: "1wlyfcw",
       title: "Inter Miami 2 - [2] San Diego FC - Anders Dreyer 82'",
@@ -88,18 +88,47 @@ describe("searchGoalClipPosts mapping", () => {
     });
   });
 
-  it("sends the goal-clip flair query, restricted to r/soccer, for the last day", async () => {
-    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [] }) });
+  it("searches by team name (no flair filter — confirmed live that flair terms return zero results, see fetchlayer-client.ts doc comment), restricted to r/soccer, for the last day", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [{ id: "x", title: "t", author: null, permalink: "/p", createdAt: "2026-01-01T00:00:00.000Z" }] }) });
     vi.stubGlobal("fetch", fetchSpy);
 
-    await searchGoalClipPosts();
+    await searchGoalClipPosts("Arsenal", "Chelsea");
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1); // found results on day 1 — no week fallback needed
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://api.fetchlayer.dev/reddit/search");
     expect(init.headers.Authorization).toBe("Bearer ss-test-key");
     const body = JSON.parse(init.body);
     expect(body).toMatchObject({ subreddit: "soccer", sort: "new", time: "day" });
-    expect(body.query).toContain("Goal Clip");
+    expect(body.query).not.toMatch(/flair/i);
+    expect(body.query).toBe("Arsenal Chelsea");
+  });
+
+  it("uses a team's first known alias in the query — e.g. Atletico Madrid, not its full name twice", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [{ id: "x", title: "t", author: null, permalink: "/p", createdAt: "2026-01-01T00:00:00.000Z" }] }) });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await searchGoalClipPosts("Atletico Madrid", "Real Madrid");
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.query).toBe("Atletico Madrid Real Madrid");
+  });
+
+  it("falls back to a week-wide search when the last-day search finds nothing — a late-day goal's post can be just outside a strict 24h window", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: "x", title: "t", author: null, permalink: "/p", createdAt: "2026-01-01T00:00:00.000Z" }] }),
+      });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await searchGoalClipPosts("Arsenal", "Chelsea");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).time).toBe("day");
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).time).toBe("week");
+    expect(result).toHaveLength(1);
   });
 });

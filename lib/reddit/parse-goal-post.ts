@@ -33,7 +33,8 @@ function cleanTitle(title: string): string {
 }
 
 /** Non-name tokens r/soccer appends inside the scorer slot: `Penalty`, `OG` / `own goal`. */
-const SCORER_ANNOTATION_PATTERN = /\b(?:penalty|pen\.?|o\.?g\.?|own[ -]goal)\b/gi;
+// Optional surrounding parens are consumed too — "(penalty)" should leave nothing behind, not "()".
+const SCORER_ANNOTATION_PATTERN = /\(?\b(?:penalty|pen\.?|o\.?g\.?|own[ -]goal)\b\)?/gi;
 
 export type ScoringSide = "home" | "away" | null;
 
