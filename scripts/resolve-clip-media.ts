@@ -2,8 +2,7 @@ import "dotenv/config";
 import { prisma } from "../lib/db/prisma";
 import { redis, redisPublisher } from "../lib/redis/client";
 import { logger } from "../lib/logger";
-import { resolveRedditPostOutbound } from "../lib/reddit/resolve-post-media";
-import { resolveClip } from "../lib/reddit/resolve-clip";
+import { resolveAndPersistClipMedia } from "../lib/reddit/resolve-social-post-media";
 
 /**
  * Makes every attached r/soccer goal clip playable inline:
@@ -28,18 +27,13 @@ function arg(name: string): string | undefined {
   return hit.includes("=") ? hit.split("=").slice(1).join("=") : "true";
 }
 
-function permalinkFromUrl(url: string): string | null {
-  const m = url.match(/reddit\.com(\/r\/[^?#]+)/i);
-  return m ? m[1] : null;
-}
-
 async function main() {
   const limit = Number(arg("limit") ?? "300");
   const all = arg("all") === "true";
 
   const posts = await prisma.socialPost.findMany({
     where: { source: "REDDIT", ...(all ? {} : { videoUrl: null, clipHost: { not: "v.redd.it" } }) },
-    select: { id: true, url: true, clipUrl: true, clipHost: true, videoUrl: true, title: true },
+    select: { id: true, title: true },
     take: limit,
   });
 
@@ -49,42 +43,17 @@ async function main() {
   let stuck = 0;
 
   for (const p of posts) {
-    let clipUrl = p.clipUrl;
-    let clipHost = p.clipHost;
-
-    // Step 1 — outbound URL (skip if we already have a non-native clipUrl).
-    if (!clipUrl) {
-      const permalink = permalinkFromUrl(p.url);
-      const outbound = permalink ? await resolveRedditPostOutbound(permalink) : null;
-      if (!outbound) {
-        stuck += 1;
-        console.log(`  ? couldn't resolve outbound   ${p.title.slice(0, 52)}`);
-        continue;
-      }
-      if (outbound.isNativeVideo) {
-        native += 1;
-        await prisma.socialPost.update({ where: { id: p.id }, data: { clipHost: "v.redd.it" } });
-        console.log(`  ● native (v.redd.it)          ${p.title.slice(0, 52)}`);
-        continue;
-      }
-      clipUrl = outbound.outboundUrl;
-      clipHost = outbound.host;
-    }
-
-    // Step 2 — direct .mp4 from the mirror host.
-    const resolved = await resolveClip(clipUrl);
-    if (!resolved) {
+    const outcome = await resolveAndPersistClipMedia(p.id);
+    if (outcome === "native") {
+      native += 1;
+      console.log(`  ● native (v.redd.it)          ${p.title.slice(0, 52)}`);
+    } else if (outcome === "inline") {
+      inline += 1;
+      console.log(`  ✓ resolved to inline .mp4     ${p.title.slice(0, 52)}`);
+    } else {
       stuck += 1;
-      await prisma.socialPost.update({ where: { id: p.id }, data: { clipUrl, clipHost } });
-      console.log(`  ✗ ${clipHost} — no inline .mp4   ${p.title.slice(0, 52)}`);
-      continue;
+      console.log(`  ✗ couldn't resolve            ${p.title.slice(0, 52)}`);
     }
-    await prisma.socialPost.update({
-      where: { id: p.id },
-      data: { clipUrl, clipHost, videoUrl: resolved.videoUrl, posterUrl: resolved.posterUrl },
-    });
-    inline += 1;
-    console.log(`  ✓ ${clipHost} → ${resolved.videoUrl}`);
   }
 
   console.log(`\ndone — ${inline} inline .mp4, ${native} native Reddit video, ${stuck} still link-only\n`);

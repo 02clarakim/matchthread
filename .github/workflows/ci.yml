@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Integration/API tests run against a real Postgres + Redis (no mocks,
+    # no isolated test DB — see vitest.config.mts) — same shape as
+    # docker-compose.yml, just as GitHub-managed service containers.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: football
+          POSTGRES_PASSWORD: football
+          POSTGRES_DB: football
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U football"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://football:football@localhost:5432/football
+      REDIS_URL: redis://localhost:6379
+      AUTH_SECRET: ci-only-not-a-real-secret
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_WS_URL: ws://localhost:4001
+      WS_PORT: "4001"
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply database schema
+        run: npx prisma migrate deploy
+
+      # `next build` (not a bare `tsc --noEmit`) — Next.js generates
+      # route-specific prop types (LayoutProps, PageProps) into .next/types
+      # during build/dev, and tsc alone can't see them on a clean checkout.
+      # This also confirms the app actually builds, which matters going
+      # into a real deploy.
+      - name: Build
+        run: npx next build
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Test
+        run: npm test

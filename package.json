@@ -19,6 +19,7 @@
     "simulate-event": "tsx scripts/simulate-event.ts",
     "ws-server": "tsx workers/ws-server.ts",
     "worker:espn-live-poller": "tsx workers/espn-live-poller.ts",
+    "worker:reddit-clip-poller": "tsx workers/reddit-clip-poller.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui"

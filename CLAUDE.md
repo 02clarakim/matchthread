@@ -2,7 +2,7 @@
 
 ## Project Context
 
-MatchPulse is a real-time football (soccer) social aggregator: live match
+MatchThread is a real-time football (soccer) social aggregator: live match
 events, generated commentary, and community reactions in one feed. Built
 end-to-end — Next.js, PostgreSQL/Prisma, Redis pub/sub, a standalone
 WebSocket gateway, and background workers for ingestion/matching. See

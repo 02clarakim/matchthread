@@ -11,7 +11,7 @@ export async function Nav() {
       <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <span>⚽</span>
-          <span>MatchPulse</span>
+          <span>MatchThread</span>
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           {session?.user ? (

@@ -4,28 +4,59 @@ import { matchWithTeams, serializeMatch } from "@/lib/db/match-includes";
 import { ScoreHeader } from "@/components/match/score-header";
 import { EventItem } from "@/components/match/event-item";
 import { LiveNowBoard } from "@/components/match/live-now-board";
+import { EmptyState } from "@/components/ui/empty-state";
 import { buttonClasses } from "@/components/ui/button";
+import { GOAL_EVENT_TYPES } from "@/lib/match-format";
 import type { ApiEvent } from "@/lib/types/api";
 
-const FALLBACK_EVENT: ApiEvent = {
-  id: "fallback",
-  type: "GOAL",
-  detail: null,
-  minute: 67,
-  extraMinute: null,
-  teamId: null,
-  playerName: "Bukayo Saka",
-  assistName: "Martin Ødegaard",
-  commentary: "Saka cuts inside from the right and fires a low shot into the far corner.",
-};
+/**
+ * Finds a real match to preview — the most recently finished ESPN-sourced
+ * match that has a goal, preferring one that also has a matched Reddit
+ * highlight. Never fabricates a score or a clip: on a fresh database
+ * (before any backfill/seed has run) this returns nulls and the page
+ * shows an honest empty state instead of a fake "Arsenal 1-0 Chelsea".
+ */
+async function findPreviewMatch() {
+  const candidates = await prisma.match
+    .findMany({
+      where: {
+        externalId: { startsWith: "espn-" },
+        status: "FINISHED",
+        events: { some: { type: { in: GOAL_EVENT_TYPES } } },
+      },
+      include: matchWithTeams,
+      orderBy: { kickoffAt: "desc" },
+      take: 5,
+    })
+    .catch(() => []);
 
-const FALLBACK_HIGHLIGHT_TITLE = "[Goal] Saka cuts inside and curls it past the keeper! 67'";
+  let fallback: (typeof candidates)[number] | null = null;
+  let fallbackEvent: Awaited<ReturnType<typeof prisma.matchEvent.findFirst>> | null = null;
+
+  for (const candidate of candidates) {
+    const [event, highlight] = await Promise.all([
+      prisma.matchEvent.findFirst({
+        where: { matchId: candidate.id, type: { in: GOAL_EVENT_TYPES } },
+        orderBy: { minute: "desc" },
+      }),
+      prisma.eventSocialMatch.findFirst({
+        where: { event: { matchId: candidate.id } },
+        include: { socialPost: true },
+        orderBy: { score: "desc" },
+      }),
+    ]);
+    if (event && highlight) return { match: candidate, event, highlight };
+    if (event && !fallback) {
+      fallback = candidate;
+      fallbackEvent = event;
+    }
+  }
+  return fallback ? { match: fallback, event: fallbackEvent, highlight: null } : null;
+}
 
 export default async function LandingPage() {
-  const [match, liveMatches] = await Promise.all([
-    prisma.match
-      .findUnique({ where: { externalId: "seed-match-arsenal-chelsea" }, include: matchWithTeams })
-      .catch(() => null),
+  const [preview, liveMatches] = await Promise.all([
+    findPreviewMatch(),
     prisma.match
       .findMany({
         where: { status: { in: ["LIVE", "PAUSED"] } },
@@ -35,50 +66,44 @@ export default async function LandingPage() {
       .catch(() => []),
   ]);
 
-  const [event, highlight] = match
-    ? await Promise.all([
-        prisma.matchEvent.findFirst({
-          where: { matchId: match.id, type: "GOAL" },
-          orderBy: { minute: "desc" },
-        }),
-        prisma.eventSocialMatch.findFirst({
-          where: { event: { matchId: match.id } },
-          include: { socialPost: true },
-          orderBy: { score: "desc" },
-        }),
-      ])
-    : [null, null];
-
-  const previewEvent: ApiEvent = event
+  const previewEvent: ApiEvent | null = preview?.event
     ? {
-        id: event.id,
-        type: event.type,
-        detail: event.detail,
-        minute: event.minute,
-        extraMinute: event.extraMinute,
-        teamId: event.teamId,
-        playerName: event.playerName,
-        assistName: event.assistName,
-        commentary: event.commentary,
+        id: preview.event.id,
+        type: preview.event.type,
+        detail: preview.event.detail,
+        minute: preview.event.minute,
+        extraMinute: preview.event.extraMinute,
+        teamId: preview.event.teamId,
+        playerName: preview.event.playerName,
+        assistName: preview.event.assistName,
+        commentary: preview.event.commentary,
       }
-    : FALLBACK_EVENT;
-
-  const previewHighlightTitle = highlight?.socialPost.title ?? FALLBACK_HIGHLIGHT_TITLE;
+    : null;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-16 space-y-16">
-      <section className="text-center space-y-5">
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+      <section className="relative text-center space-y-5 overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="animate-drift pointer-events-none absolute left-1/2 top-0 -z-10 h-72 w-72 rounded-full bg-accent/20 blur-3xl"
+        />
+        <h1 className="animate-fade-in-up text-3xl sm:text-4xl font-bold tracking-tight">
           Something happens.
           <br />
           <span className="text-accent">See what, see the reaction, find the clip.</span>
         </h1>
-        <p className="mx-auto max-w-xl text-muted">
-          MatchPulse follows your teams live — real match events, plain-English commentary, and the
-          community&apos;s reaction, arriving together in one feed. No more tab-switching between a
-          score app, X, Reddit, and YouTube.
+        <p
+          className="animate-fade-in-up mx-auto max-w-xl text-muted"
+          style={{ animationDelay: "120ms" }}
+        >
+          MatchThread follows your teams live — real match events, plain-English commentary, and
+          the community&apos;s reaction, arriving together in one feed. No more tab-switching
+          between a score app, X, Reddit, and YouTube.
         </p>
-        <div className="flex items-center justify-center gap-3">
+        <div
+          className="animate-fade-in-up flex items-center justify-center gap-3"
+          style={{ animationDelay: "240ms" }}
+        >
           <Link href="/register" className={buttonClasses("primary")}>
             Get started
           </Link>
@@ -88,7 +113,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section className="animate-fade-in-up space-y-3" style={{ animationDelay: "320ms" }}>
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
@@ -99,34 +124,41 @@ export default async function LandingPage() {
         <LiveNowBoard initial={liveMatches.map(serializeMatch)} />
       </section>
 
-      <section className="space-y-4">
-        {match ? (
-          <ScoreHeader match={serializeMatch(match)} />
-        ) : (
-          <div className="rounded-xl border border-border bg-surface p-6 text-center text-sm text-muted">
-            Arsenal 1 – 0 Chelsea · 67&apos;
-          </div>
-        )}
+      <section className="animate-fade-in-up space-y-4" style={{ animationDelay: "420ms" }}>
+        {preview ? (
+          <>
+            <ScoreHeader match={serializeMatch(preview.match)} />
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-border bg-surface p-4">
-            <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-              What happened
-            </h2>
-            <EventItem event={previewEvent} />
-          </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg">
+                <h2 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
+                  What happened
+                </h2>
+                {previewEvent && <EventItem event={previewEvent} />}
+              </div>
 
-          <div className="rounded-xl border border-border bg-surface p-4">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-              What fans are saying
-            </h2>
-            <div className="rounded-lg border border-border bg-surface-2 p-3">
-              <span className="text-xs font-medium text-accent">🔥 Best reaction</span>
-              <p className="mt-1.5 text-sm leading-snug">{previewHighlightTitle}</p>
-              <span className="mt-1.5 block text-xs text-muted">View on Reddit →</span>
+              <div className="rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg">
+                <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                  What fans are saying
+                </h2>
+                {preview.highlight ? (
+                  <div className="rounded-lg border border-border bg-surface-2 p-3">
+                    <span className="text-xs font-medium text-accent">🔥 Best reaction</span>
+                    <p className="mt-1.5 text-sm leading-snug">{preview.highlight.socialPost.title}</p>
+                    <span className="mt-1.5 block text-xs text-muted">View on Reddit →</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted">No matched community reaction for this goal yet.</p>
+                )}
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        ) : (
+          <EmptyState icon="⚽">
+            No finished matches yet — scores, commentary, and reactions will show up here the
+            moment a real match wraps up.
+          </EmptyState>
+        )}
       </section>
     </div>
   );

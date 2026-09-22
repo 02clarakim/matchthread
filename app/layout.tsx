@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MatchPulse — Real-time football, explained",
+  title: "MatchThread — Real-time football, explained",
   description:
     "Live football events, plain-English commentary, and the community's reaction — all in one place.",
 };
