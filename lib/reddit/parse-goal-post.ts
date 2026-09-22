@@ -65,7 +65,8 @@ export interface ParsedGoalClipTitle {
   /** null when neither/both score numbers are bracketed — caller should fall back. */
   scoringSide: ScoringSide;
   playerName: string | null;
-  minute: number;
+  /** null on the rare real post that omits a minute entirely (confirmed live — "Atleti 2 - [1] Real Madrid -  Toni Rudiger" has none). Callers must not assume a minute is always present. */
+  minute: number | null;
   extraMinute: number | null;
   isPenalty: boolean;
   isOwnGoal: boolean;
@@ -82,15 +83,17 @@ export function parseGoalClipTitle(rawTitle: string): ParsedGoalClipTitle | null
   // search (not a single match) — the minute marker is usually the last
   // one in the title, and a global search is more robust than anchoring
   // to the string end given trailing punctuation/whitespace variance.
+  // A title with no minute marker at all still gets parsed (see minute's
+  // doc comment above) — just treat the whole thing as "before the minute".
   const minuteMatches = [...withoutTrailingParen.matchAll(MINUTE_MARKER_PATTERN)];
   const lastMinuteMatch = minuteMatches[minuteMatches.length - 1];
-  if (!lastMinuteMatch || lastMinuteMatch.index === undefined) return null;
+  const minuteInRange = lastMinuteMatch ? Number(lastMinuteMatch[1]) : null;
+  const hasValidMinute = lastMinuteMatch && lastMinuteMatch.index !== undefined && minuteInRange !== null && minuteInRange >= 1 && minuteInRange <= 130;
 
-  const minute = Number(lastMinuteMatch[1]);
-  const extraMinute = lastMinuteMatch[2] ? Number(lastMinuteMatch[2]) : null;
-  if (minute < 1 || minute > 130) return null;
+  const minute = hasValidMinute ? minuteInRange : null;
+  const extraMinute = hasValidMinute && lastMinuteMatch![2] ? Number(lastMinuteMatch![2]) : null;
 
-  const beforeMinute = withoutTrailingParen.slice(0, lastMinuteMatch.index).trim();
+  const beforeMinute = hasValidMinute ? withoutTrailingParen.slice(0, lastMinuteMatch!.index).trim() : withoutTrailingParen;
 
   const lastDashIndex = beforeMinute.lastIndexOf(" - ");
   if (lastDashIndex === -1) return null;

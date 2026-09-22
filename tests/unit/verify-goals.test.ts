@@ -43,6 +43,19 @@ describe("clipsForMatch", () => {
     const got = clipsForMatch(pool, "Nottingham Forest", "Leeds United").map((c) => c.postId);
     expect(got).toEqual(["c"]);
   });
+
+  // Confirmed live against a real r/soccer post ("Atleti 2 - [1] Real Madrid
+  // - Toni Rudiger") that r/soccer posters commonly use "Atleti" instead of
+  // the full name — this must keep matching "Atletico Madrid" specifically,
+  // not just team aliases in general.
+  it("resolves 'Atleti' to Atletico Madrid", () => {
+    // Real title (r/soccer/comments/1wll4fp) — no minute marker at all,
+    // see the verifyGoals "scorer-only fallback" test below for why that
+    // still needs to resolve.
+    const atletiPool = [clip({ postId: "e", title: "Atleti 2 - [1] Real Madrid -  Toni Rudiger" })];
+    const got = clipsForMatch(atletiPool, "Atletico Madrid", "Real Madrid").map((c) => c.postId);
+    expect(got).toEqual(["e"]);
+  });
 });
 
 describe("verifyGoals", () => {
@@ -112,5 +125,43 @@ describe("verifyGoals", () => {
     expect(result.orphanClips.map((c) => c.postId)).toEqual(["e"]);
     expect(result.verified).toBe(false);
     expect(result.discrepancies.join(" ")).toMatch(/Richarlison/);
+  });
+
+  it("matches a real post that omits the minute by scorer surname alone", () => {
+    // Real match, real titles (r/soccer/comments/1wll4fp for the Rüdiger
+    // one) — genuinely has no minute marker. minutesClose() never matches
+    // it in the main pass (by design), so this only succeeds via the
+    // dedicated fallback pass. All 3 real goals included so the bracketed
+    // "2-[1]" scoreline in the Rüdiger post (the 3rd goal) stays consistent
+    // with ESPN's own count.
+    const espnGoals = [
+      { minute: 53, extraMinute: null, scorer: "Alejandro Grimaldo", assist: null, teamEspnId: "1068", teamName: "Atletico Madrid", type: "PENALTY_GOAL" as const, sourceText: null },
+      { minute: 59, extraMinute: null, scorer: "Jonathan David", assist: null, teamEspnId: "1068", teamName: "Atletico Madrid", type: "GOAL" as const, sourceText: null },
+      { minute: 89, extraMinute: null, scorer: "Antonio Rüdiger", assist: null, teamEspnId: "86", teamName: "Real Madrid", type: "GOAL" as const, sourceText: null },
+    ];
+    const clips = [
+      clip({ postId: "grimaldo", title: "Atletico Madrid [1] - 0 Real Madrid - Alex Grimaldo (penalty) 53'" }),
+      clip({ postId: "david", title: "Atletico Madrid [2] - 0 Real Madrid - Jonathan David 59'" }),
+      clip({ postId: "rudiger", title: "Atleti 2 - [1] Real Madrid -  Toni Rudiger" }),
+    ];
+
+    const result = verifyGoals(espnGoals, clips);
+
+    const rudigerGoal = result.goals.find((g) => g.espn.scorer === "Antonio Rüdiger");
+    expect(rudigerGoal?.status).toBe("verified");
+    expect(rudigerGoal?.clip?.postId).toBe("rudiger");
+    expect(rudigerGoal?.notes.join(" ")).toMatch(/no minute/);
+    expect(result.orphanClips).toHaveLength(0);
+    expect(result.verified).toBe(true);
+  });
+
+  it("never lets a minute-less clip fill a gap for the wrong scorer", () => {
+    const espnGoals = [{ minute: 10, extraMinute: null, scorer: "Someone Else", assist: null, teamEspnId: "1", teamName: "Home", type: "GOAL" as const, sourceText: null }];
+    const clips = [clip({ postId: "x", title: "Home 1 - [0] Away -  Toni Rudiger" })];
+
+    const result = verifyGoals(espnGoals, clips);
+
+    expect(result.goals[0].status).toBe("clip-missing");
+    expect(result.orphanClips.map((c) => c.postId)).toEqual(["x"]);
   });
 });

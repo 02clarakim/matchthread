@@ -7,6 +7,8 @@ import { attachCommentary } from "../workers/commentary-worker";
 import { processEventMatching } from "../workers/event-processor";
 import type { NormalizedEvent, NormalizedMatch } from "../lib/sports/types";
 import { logger } from "../lib/logger";
+import { DEMO_EMAIL, DEMO_DEFAULT_TEAM_NAMES } from "../lib/demo-account";
+import { resetDemoFavorites } from "../lib/demo-account-server";
 
 /**
  * Builds a fully working demo dataset by driving the exact same ingestion
@@ -462,8 +464,8 @@ async function seedUsers() {
   const passwordHash = await bcrypt.hash("password123", 10);
 
   const demo = await prisma.user.upsert({
-    where: { email: "demo@example.com" },
-    create: { email: "demo@example.com", name: "Demo Fan", passwordHash },
+    where: { email: DEMO_EMAIL },
+    create: { email: DEMO_EMAIL, name: "Demo Fan", passwordHash },
     update: {},
   });
 
@@ -473,29 +475,12 @@ async function seedUsers() {
     update: {},
   });
 
-  const teamsByExternalId = await prisma.team.findMany({
-    where: {
-      externalId: {
-        in: [TEAMS.arsenal.externalId, TEAMS.liverpool.externalId, TEAMS.barcelona.externalId],
-      },
-    },
-  });
-  const teamId = (externalId: string) =>
-    teamsByExternalId.find((t) => t.externalId === externalId)?.id;
+  // Same canonical list auth.ts's authorize() resets to on every demo
+  // login (lib/demo-account.ts) — one source of truth, so a fresh seed and
+  // a fresh login always land on the same defaults.
+  await resetDemoFavorites(demo.id);
 
-  const demoFavorites = [TEAMS.arsenal.externalId, TEAMS.liverpool.externalId, TEAMS.barcelona.externalId]
-    .map(teamId)
-    .filter((id): id is string => Boolean(id));
-
-  for (const tid of demoFavorites) {
-    await prisma.userFavoriteTeam.upsert({
-      where: { userId_teamId: { userId: demo.id, teamId: tid } },
-      create: { userId: demo.id, teamId: tid },
-      update: {},
-    });
-  }
-
-  const barcaId = teamId(TEAMS.barcelona.externalId);
+  const barcaId = (await prisma.team.findFirst({ where: { externalId: TEAMS.barcelona.externalId } }))?.id;
   if (barcaId) {
     await prisma.userFavoriteTeam.upsert({
       where: { userId_teamId: { userId: second.id, teamId: barcaId } },
@@ -504,7 +489,11 @@ async function seedUsers() {
     });
   }
 
-  logger.info("seed_users_created", { demo: demo.email, second: second.email });
+  logger.info("seed_users_created", {
+    demo: demo.email,
+    second: second.email,
+    demoFavorites: DEMO_DEFAULT_TEAM_NAMES.join(", "),
+  });
 }
 
 async function main() {
@@ -520,7 +509,7 @@ async function main() {
 
   logger.info("seed_completed", {});
   console.log("\nSeed complete. Demo accounts (password: password123):");
-  console.log("  demo@example.com    — favorites: Arsenal, Liverpool, Barcelona");
+  console.log(`  demo@example.com    — favorites: ${DEMO_DEFAULT_TEAM_NAMES.join(", ")} (resets on every login)`);
   console.log("  second@example.com  — favorites: Barcelona\n");
 }
 

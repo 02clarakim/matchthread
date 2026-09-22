@@ -92,6 +92,15 @@ function minuteOf(g: { minute: number; extraMinute: number | null }): number {
   return g.minute + (g.extraMinute ?? 0);
 }
 
+function hasMinute(p: ParsedGoalClipTitle): p is ParsedGoalClipTitle & { minute: number } {
+  return p.minute !== null;
+}
+
+/** True when two clips' minutes are within a minute of each other — always false when either side has no minute at all (the rare title that omits one entirely; see parseGoalClipTitle's minute doc comment). A minute-less clip is matched separately, by surname alone, in the fallback pass below — never treated as "close enough" here. */
+function minutesClose(a: ParsedGoalClipTitle, b: { minute: number; extraMinute: number | null }): boolean {
+  return hasMinute(a) && Math.abs(minuteOf(a) - minuteOf(b)) <= 1;
+}
+
 export function verifyGoals(espnGoals: EspnGoal[], clips: ClipInput[]): VerifyResult {
   const parsedClips = clips.map((clip) => ({ clip, parsed: parseGoalClipTitle(clip.title) }));
   const usedClipIds = new Set<string>();
@@ -105,15 +114,13 @@ export function verifyGoals(espnGoals: EspnGoal[], clips: ClipInput[]): VerifyRe
     const hit = parsedClips.find(({ clip, parsed }) => {
       if (usedClipIds.has(clip.postId) || !parsed) return false;
       const scorerOk = sameScorer(parsed.playerName, espn.scorer);
-      const minuteOk = Math.abs(minuteOf(parsed) - minuteOf(espn)) <= 1;
-      return scorerOk && minuteOk;
+      return scorerOk && minutesClose(parsed, espn);
     });
 
     if (!hit) {
       // Is there a clip near this minute whose scorer disagrees? That's a mismatch, not just a gap.
       const nearMiss = parsedClips.find(
-        ({ clip, parsed }) =>
-          !usedClipIds.has(clip.postId) && parsed && Math.abs(minuteOf(parsed) - minuteOf(espn)) <= 1
+        ({ clip, parsed }) => !usedClipIds.has(clip.postId) && parsed && minutesClose(parsed, espn)
       );
       if (nearMiss?.parsed) {
         usedClipIds.add(nearMiss.clip.postId);
@@ -127,7 +134,7 @@ export function verifyGoals(espnGoals: EspnGoal[], clips: ClipInput[]): VerifyRe
     }
 
     usedClipIds.add(hit.clip.postId);
-    if (hit.parsed && minuteOf(hit.parsed) !== minuteOf(espn)) {
+    if (hit.parsed && hasMinute(hit.parsed) && minuteOf(hit.parsed) !== minuteOf(espn)) {
       notes.push(`minute off by one: ESPN ${espn.minute}', Reddit ${hit.parsed.minute}'`);
     }
     if (hit.parsed?.isPenalty && espn.type !== "PENALTY_GOAL") {
@@ -136,16 +143,34 @@ export function verifyGoals(espnGoals: EspnGoal[], clips: ClipInput[]): VerifyRe
     return { espn, clip: hit.clip, clipParsed: hit.parsed, extraClips: [], status: "verified", notes };
   });
 
+  // Fallback pass: a real post can omit the minute entirely — confirmed
+  // live ("Atleti 2 - [1] Real Madrid -  Toni Rudiger" has no minute
+  // marker at all, not a parsing failure on our end). minutesClose() never
+  // matches a minute-less clip, by design, so it never fills a gap in the
+  // main pass above; this runs once more afterward, matching by scorer
+  // surname alone, only for goals still missing a clip. Deliberately
+  // narrower than the main pass (no fallback for a mismatch, no minute
+  // cross-check) since surname is the only signal available.
+  for (const gv of goals) {
+    if (gv.status !== "clip-missing") continue;
+    const fallbackHit = parsedClips.find(
+      ({ clip, parsed }) => !usedClipIds.has(clip.postId) && parsed && !hasMinute(parsed) && sameScorer(parsed.playerName, gv.espn.scorer)
+    );
+    if (!fallbackHit?.parsed) continue;
+    usedClipIds.add(fallbackHit.clip.postId);
+    gv.clip = fallbackHit.clip;
+    gv.clipParsed = fallbackHit.parsed;
+    gv.status = "verified";
+    gv.notes = [`matched by scorer only — Reddit title has no minute ("${fallbackHit.clip.title}")`];
+  }
+
   // Second pass: an as-yet-unused clip whose scorer + minute still line up
   // with a goal we already matched is a mirror / alternate angle of that
   // goal — attach it there. Only a clip that fits NO goal is a phantom.
   for (const { clip, parsed } of parsedClips) {
     if (usedClipIds.has(clip.postId) || !parsed) continue;
     const gv = goals.find(
-      (g) =>
-        g.status === "verified" &&
-        sameScorer(parsed.playerName, g.espn.scorer) &&
-        Math.abs(minuteOf(parsed) - minuteOf(g.espn)) <= 1
+      (g) => g.status === "verified" && sameScorer(parsed.playerName, g.espn.scorer) && minutesClose(parsed, g.espn)
     );
     if (gv) {
       usedClipIds.add(clip.postId);

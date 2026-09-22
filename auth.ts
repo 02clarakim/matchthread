@@ -3,6 +3,8 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./lib/db/prisma";
 import { logger } from "./lib/logger";
+import { DEMO_EMAIL } from "./lib/demo-account";
+import { resetDemoFavorites } from "./lib/demo-account-server";
 
 /**
  * Credentials + JWT sessions — no database adapter. There's no OAuth
@@ -31,6 +33,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!valid) {
           logger.info("auth_login_failed", { email });
           return null;
+        }
+
+        // Shared demo account (see lib/demo-account.ts): reset its
+        // favorites on every login so the next visitor never inherits
+        // whatever the previous one left it as, mid-session edits are
+        // still real and visible for as long as that person stays signed
+        // in — it's only a fresh login that snaps it back.
+        if (email === DEMO_EMAIL) {
+          await resetDemoFavorites(user.id).catch((err) =>
+            logger.warn("demo_favorites_reset_failed", { error: String(err) })
+          );
         }
 
         return { id: user.id, email: user.email, name: user.name };

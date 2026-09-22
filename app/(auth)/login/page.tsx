@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LoginForm } from "@/components/auth/login-form";
+import { DemoLoginButton } from "@/components/auth/demo-login-button";
 
 export default async function LoginPage({
   searchParams,
@@ -19,9 +20,14 @@ export default async function LoginPage({
           Create one
         </Link>
       </p>
-      <p className="mt-3 text-xs text-muted">
-        Demo account: demo@example.com / password123
-      </p>
+      <div className="mt-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted">or</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <div className="mt-4 flex justify-center">
+        <DemoLoginButton variant="secondary" />
+      </div>
     </div>
   );
 }
