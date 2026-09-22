@@ -5,7 +5,6 @@ import { matchWithTeams, serializeMatch, type MatchWithTeams } from "@/lib/db/ma
 import { ScoreHeader } from "@/components/match/score-header";
 import { EventItem } from "@/components/match/event-item";
 import { LiveNowBoard } from "@/components/match/live-now-board";
-import { MatchedHeightPanels } from "@/components/match/matched-height-panels";
 import { EmptyState } from "@/components/ui/empty-state";
 import { buttonClasses } from "@/components/ui/button";
 import { HighlightList } from "@/components/social/highlight-list";
@@ -14,7 +13,7 @@ import { GOAL_EVENT_TYPES } from "@/lib/match-format";
 import type { ApiEvent, ApiHighlight } from "@/lib/types/api";
 
 /** A deliberately chosen match to lead with — real, verified data (not fabricated), just a specific pick instead of whatever the "most recent" heuristic below would land on. Unset (null) to always use the dynamic pick. */
-const FEATURED_MATCH_SLUG: string | null = "atletico-madrid-real-madrid-092026";
+const FEATURED_MATCH_SLUG: string | null = "aston-villa-arsenal-083126";
 
 /**
  * Given a candidate match, its FULL goal timeline and EVERY matched Reddit
@@ -41,12 +40,20 @@ async function resolvePreview(candidate: MatchWithTeams) {
 }
 
 /**
- * Finds a real match to preview — FEATURED_MATCH_SLUG if it's set and has a
- * goal, otherwise the most recently finished ESPN-sourced match that has
- * one, preferring one that also has matched Reddit highlights. Never
- * fabricates a score or a clip: on a fresh database (before any
- * backfill/seed has run) this returns null and the page shows an honest
- * empty state instead of a fake "Arsenal 1-0 Chelsea".
+ * Finds a real match to preview — FEATURED_MATCH_SLUG if it's set, has a
+ * goal, AND already has a matched Reddit highlight, otherwise the most
+ * recently finished ESPN-sourced match that does. Never fabricates a score
+ * or a clip: on a fresh database (before any backfill/seed has run) this
+ * returns null and the page shows an honest empty state instead of a fake
+ * "Arsenal 1-0 Chelsea".
+ *
+ * The highlight check on FEATURED_MATCH_SLUG specifically is deliberate,
+ * not incidental: this constant gets hand-picked and changed periodically,
+ * and a match chosen without checking whether its clip pipeline actually
+ * ran silently showed an empty "What fans are saying" panel more than
+ * once — confirmed live. Falling through to the dynamic pick when the
+ * featured slug doesn't have one yet means picking a new featured match
+ * can no longer reproduce that mistake, on this page at least.
  */
 async function findPreviewMatch() {
   if (FEATURED_MATCH_SLUG) {
@@ -55,7 +62,7 @@ async function findPreviewMatch() {
       .catch(() => null);
     if (featured) {
       const resolved = await resolvePreview(featured);
-      if (resolved) return resolved;
+      if (resolved && resolved.highlightRows.length > 0) return resolved;
     }
   }
 
@@ -132,13 +139,8 @@ export default async function LandingPage() {
       .sort(byClipThenScore) ?? [];
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-16 space-y-16 overflow-x-hidden">
+    <div className="mx-auto max-w-4xl px-4 py-16 space-y-16">
       <section className="relative text-center space-y-5">
-        {/* Radial gradient, not a blurred filled shape — it fades to
-            transparent well inside its own box (70% stop), so there's no
-            hard edge to clip. Deliberately NOT wrapped in overflow-hidden:
-            that combined with the old top-anchored position is what cut the
-            glow off before it could fade naturally. */}
         <div
           aria-hidden="true"
           className="animate-drift pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-70"
@@ -204,31 +206,27 @@ export default async function LandingPage() {
                 actual match page uses, just not wired to the realtime
                 websocket (this is always a finished match, so there's
                 nothing live to stream in). No longer just the latest goal
-                and the single top-scoring clip. The clip column is capped
-                to the timeline column's height and scrolls internally past
-                that — see MatchedHeightPanels. */}
-            <MatchedHeightPanels
-              left={
-                <div className="rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg">
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-                    What happened
-                  </h3>
-                  <div className="divide-y divide-border">
-                    {previewEvents.map((event) => (
-                      <EventItem key={event.id} event={event} />
-                    ))}
-                  </div>
+                and the single top-scoring clip. Plain two-column grid —
+                each side just grows to fit its own content. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                  What happened
+                </h3>
+                <div className="divide-y divide-border">
+                  {previewEvents.map((event) => (
+                    <EventItem key={event.id} event={event} />
+                  ))}
                 </div>
-              }
-              right={
-                <div className="rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:border-accent/40">
-                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-                    What fans are saying
-                  </h3>
-                  <HighlightList highlights={previewHighlights} />
-                </div>
-              }
-            />
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-lg">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                  What fans are saying
+                </h3>
+                <HighlightList highlights={previewHighlights} />
+              </div>
+            </div>
           </>
         ) : (
           <EmptyState icon="⚽">

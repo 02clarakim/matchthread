@@ -52,30 +52,41 @@ const TEAMS = {
  * matches yet"). TEAMS above is reserved for clubs the seeded demo matches
  * actually use, since those also need a roster in simulate-event.ts.
  */
+// Kept in sync with each league's real current (2026-27) roster —
+// confirmed live against ESPN's own team list (lib/sports/espn.ts's
+// fetchEspnTeams) on 2026-09-22, not just carried over from whenever this
+// was first written. Burnley/West Ham/Wolves, Girona/Mallorca/Real
+// Oviedo, and St. Pauli/Heidenheim/Bochum/Wolfsburg were all relegated
+// out of their leagues for this season — confirmed by a zero-result sweep
+// of ESPN's real scoreboard across an 80-day window, not just their
+// absence from this roster list — and replaced below with the real
+// promoted sides. A team with no seeded match still needs a spot here so
+// "Find teams" / favoriting sees it at all (see the comment above TEAMS).
 const EXTRA_PREMIER_LEAGUE_TEAMS = [
   team("seed-team-bournemouth", "Bournemouth", "BOU"),
   team("seed-team-brentford", "Brentford", "BRE"),
   team("seed-team-brighton", "Brighton & Hove Albion", "BHA"),
-  team("seed-team-burnley", "Burnley", "BUR"),
+  team("seed-team-coventry", "Coventry City", "COV"),
   team("seed-team-crystal-palace", "Crystal Palace", "CRY"),
   team("seed-team-everton", "Everton", "EVE"),
   team("seed-team-fulham", "Fulham", "FUL"),
+  team("seed-team-hull", "Hull City", "HUL"),
+  team("seed-team-ipswich", "Ipswich Town", "IPS"),
   team("seed-team-leeds", "Leeds United", "LEE"),
   team("seed-team-nottm-forest", "Nottingham Forest", "NFO"),
   team("seed-team-sunderland", "Sunderland", "SUN"),
-  team("seed-team-west-ham", "West Ham United", "WHU"),
-  team("seed-team-wolves", "Wolverhampton Wanderers", "WOL"),
 ];
 
 const EXTRA_LALIGA_TEAMS = [
   team("seed-team-athletic-bilbao", "Athletic Bilbao", "ATH"),
   team("seed-team-real-betis", "Real Betis", "BET"),
   team("seed-team-celta-vigo", "Celta Vigo", "CEL"),
+  team("seed-team-deportivo", "Deportivo", "DEP"),
   team("seed-team-espanyol", "Espanyol", "ESP"),
   team("seed-team-getafe", "Getafe", "GET"),
-  team("seed-team-girona", "Girona", "GIR"),
-  team("seed-team-mallorca", "Mallorca", "MLL"),
+  team("seed-team-malaga", "Málaga", "MCF"),
   team("seed-team-osasuna", "Osasuna", "OSA"),
+  team("seed-team-racing-santander", "Racing Santander", "RAC"),
   team("seed-team-rayo-vallecano", "Rayo Vallecano", "RAY"),
   team("seed-team-real-sociedad", "Real Sociedad", "RSO"),
   team("seed-team-valencia", "Valencia", "VAL"),
@@ -83,25 +94,24 @@ const EXTRA_LALIGA_TEAMS = [
   team("seed-team-alaves", "Alavés", "ALA"),
   team("seed-team-levante", "Levante", "LEV"),
   team("seed-team-elche", "Elche", "ELC"),
-  team("seed-team-real-oviedo", "Real Oviedo", "OVI"),
 ];
 
 const EXTRA_BUNDESLIGA_TEAMS = [
   team("seed-team-rb-leipzig", "RB Leipzig", "RBL"),
   team("seed-team-leverkusen", "Bayer Leverkusen", "B04"),
+  team("seed-team-cologne", "FC Cologne", "KOE"),
   team("seed-team-frankfurt", "Eintracht Frankfurt", "SGE"),
   team("seed-team-stuttgart", "VfB Stuttgart", "VFB"),
   team("seed-team-gladbach", "Borussia Mönchengladbach", "BMG"),
   team("seed-team-werder-bremen", "Werder Bremen", "SVW"),
-  team("seed-team-wolfsburg", "VfL Wolfsburg", "WOB"),
   team("seed-team-mainz", "Mainz 05", "M05"),
   team("seed-team-union-berlin", "Union Berlin", "FCU"),
   team("seed-team-freiburg", "SC Freiburg", "SCF"),
   team("seed-team-augsburg", "FC Augsburg", "FCA"),
   team("seed-team-hoffenheim", "TSG Hoffenheim", "TSG"),
-  team("seed-team-st-pauli", "FC St. Pauli", "STP"),
-  team("seed-team-heidenheim", "FC Heidenheim", "HDH"),
-  team("seed-team-bochum", "VfL Bochum", "BOC"),
+  team("seed-team-paderborn", "SC Paderborn 07", "SCP"),
+  team("seed-team-elversberg", "SV Elversberg", "ELV"),
+  team("seed-team-schalke", "Schalke 04", "S04"),
   team("seed-team-hamburger-sv", "Hamburger SV", "HSV"),
 ];
 

@@ -57,7 +57,10 @@ function toRelativePermalink(absoluteOrRelative: string): string {
   }
 }
 
-async function searchReddit(query: string, time: "day" | "week"): Promise<ClipInput[]> {
+type SearchTime = "day" | "week" | "month" | "all";
+type SearchSort = "new" | "relevance";
+
+async function searchReddit(query: string, time: SearchTime, sort: SearchSort = "new"): Promise<ClipInput[]> {
   const apiKey = process.env.FETCHLAYER_API_KEY;
   if (!apiKey) return [];
 
@@ -65,7 +68,7 @@ async function searchReddit(query: string, time: "day" | "week"): Promise<ClipIn
     const res = await fetch(`${BASE}/search`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, subreddit: SUBREDDIT, sort: "new", time, limit: 30 }),
+      body: JSON.stringify({ query, subreddit: SUBREDDIT, sort, time, limit: 30 }),
     });
     if (!res.ok) {
       logger.warn("fetchlayer_search_failed", { status: res.status, query });
@@ -104,4 +107,25 @@ export async function searchGoalClipPosts(homeTeamName: string, awayTeamName: st
   const dayResults = await searchReddit(query, "day");
   if (dayResults.length > 0) return dayResults;
   return searchReddit(query, "week");
+}
+
+/**
+ * For a match that's more than a few days old (workers/reddit-clip-poller.ts's
+ * catch-up sweep) — `sort: "new"` (searchGoalClipPosts above) is right for
+ * a match that just finished, but it silently stops working for anything
+ * older: "new" returns the 30 newest posts matching the query terms at all,
+ * and confirmed live, that fills up with unrelated recent chatter mentioning
+ * either team well within a week or two, crowding the actual (older) Goal
+ * Clip post out of the results entirely — no time window fixes that, since
+ * a wider time range sorted by "new" still returns the *newest* matches
+ * first. `sort: "relevance"` doesn't have this problem: confirmed live
+ * against a real 17-day-old match (Man City 1-0 Coventry, 2026-09-05) that
+ * "new" found nothing for at any time window, "relevance" + "month" found
+ * immediately, at the exact match's actual post.
+ */
+export async function searchGoalClipPostsWide(homeTeamName: string, awayTeamName: string): Promise<ClipInput[]> {
+  const query = `${aliasesFor(homeTeamName)[0]} ${aliasesFor(awayTeamName)[0]}`;
+  const monthResults = await searchReddit(query, "month", "relevance");
+  if (monthResults.length > 0) return monthResults;
+  return searchReddit(query, "all", "relevance");
 }

@@ -30,6 +30,19 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Belt-and-suspenders against horizontal scroll: seen intermittently on
+   the landing page (a trackpad swipe would shift the whole page sideways,
+   cutting off content on the left) — real data occasionally makes some
+   element a few pixels wider than the viewport (e.g. a long real venue
+   name like "Riyadh Air Metropolitano"), and a fix scoped to one page's
+   own wrapper div doesn't catch every place that could happen, now or
+   later. Clipping it at the true root means no element anywhere on the
+   site can ever create page-level horizontal scroll. */
+html,
+body {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
