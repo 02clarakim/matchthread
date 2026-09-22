@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isFetchlayerConfigured, searchGoalClipPosts } from "@/lib/reddit/fetchlayer-client";
+import { isFetchlayerConfigured, searchGoalClipPosts, searchGoalClipPostsWide } from "@/lib/reddit/fetchlayer-client";
 
 describe("isFetchlayerConfigured / searchGoalClipPosts (graceful degradation)", () => {
   const original = process.env.FETCHLAYER_API_KEY;
@@ -129,6 +129,57 @@ describe("searchGoalClipPosts", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body).time).toBe("day");
     expect(JSON.parse(fetchSpy.mock.calls[1][1].body).time).toBe("week");
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("searchGoalClipPostsWide", () => {
+  const original = process.env.FETCHLAYER_API_KEY;
+
+  beforeEach(() => {
+    process.env.FETCHLAYER_API_KEY = "ss-test-key";
+  });
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.FETCHLAYER_API_KEY;
+    else process.env.FETCHLAYER_API_KEY = original;
+    vi.unstubAllGlobals();
+  });
+
+  // Confirmed live against a real 17-day-old match (Man City 1-0 Coventry,
+  // 2026-09-05): searchGoalClipPosts's sort=new found nothing at any time
+  // window — "new" always returns the *newest* matching posts, and a
+  // couple of weeks of unrelated chatter mentioning either team name is
+  // plenty to crowd an older Goal Clip post out of a 30-item page
+  // entirely. sort=relevance found the real post immediately.
+  it("searches by relevance, not recency — the whole reason this function exists", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [{ id: "x", title: "t", author: null, permalink: "/p", createdAt: "2026-01-01T00:00:00.000Z" }] }) });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await searchGoalClipPostsWide("Manchester City", "Coventry City");
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.sort).toBe("relevance");
+    expect(body.time).toBe("month");
+    expect(body.query).toBe("Manchester City Coventry City");
+  });
+
+  it("falls back to an all-time search when the last month finds nothing", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: "x", title: "t", author: null, permalink: "/p", createdAt: "2026-01-01T00:00:00.000Z" }] }),
+      });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await searchGoalClipPostsWide("Arsenal", "Chelsea");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).time).toBe("month");
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).time).toBe("all");
+    expect(JSON.parse(fetchSpy.mock.calls[1][1].body).sort).toBe("relevance");
     expect(result).toHaveLength(1);
   });
 });

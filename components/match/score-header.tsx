@@ -12,7 +12,7 @@ function TeamColumn({ team, goals }: { team: ApiTeam; goals: ApiEvent[] }) {
         className="flex flex-col items-center gap-2 rounded-lg p-2 -m-2 hover:bg-surface-2 transition-colors"
       >
         <TeamBadge name={team.name} logoUrl={team.logoUrl} size="lg" />
-        <span className="text-sm font-medium">{team.name}</span>
+        <span className="text-sm font-medium break-words">{team.name}</span>
       </Link>
       {goals.length > 0 && (
         <ul className="space-y-0.5">
@@ -57,7 +57,7 @@ export function ScoreHeader({ match, homeGoals = [], awayGoals = [] }: ScoreHead
           ) : (
             <div className="text-lg text-muted">{kickoffTimeLabel(match.kickoffAt)}</div>
           )}
-          {match.venue && <div className="mt-1 text-xs text-muted">{match.venue}</div>}
+          {match.venue && <div className="mt-1 text-xs text-muted break-words">{match.venue}</div>}
         </div>
 
         <TeamColumn team={match.awayTeam} goals={awayGoals} />

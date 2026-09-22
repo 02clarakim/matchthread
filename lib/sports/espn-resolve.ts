@@ -25,6 +25,15 @@ const TEAM_NAME_OVERRIDES: Record<string, string> = {
   "newcastle": "Newcastle United",
   "west ham": "West Ham United",
   "brighton": "Brighton & Hove Albion",
+  // ESPN's real displayName is "Hamburg SV" — our seeded name is
+  // "Hamburger SV" (the adjectival German form). Close enough that a
+  // human wouldn't blink, but neither the exact-name check nor the
+  // normalized-substring fallback below catches it ("hamburger sv" does
+  // not contain "hamburg sv" as a contiguous substring), so without this
+  // override every real Hamburg match created a second, duplicate Team row
+  // under an "espn-team-*" id — confirmed live: the seeded row sat at 0
+  // matches while the real ones piled up on the orphaned duplicate.
+  "hamburg sv": "Hamburger SV",
 };
 
 export function normTeamName(s: string): string {
