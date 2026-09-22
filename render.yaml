@@ -1,0 +1,91 @@
+# Render Blueprint — deploys all 4 MatchThread services + Postgres + Redis
+# from one file. See DEPLOY.md for the full walkthrough.
+#
+# In the Render dashboard: New -> Blueprint -> connect this repo. Render
+# reads this file and proposes all 5 resources below in one go. Fields
+# marked `sync: false` are secrets Render will prompt you to paste in
+# (never put real secrets in this file — it's committed to the repo).
+
+databases:
+  - name: matchthread-db
+    plan: starter
+    postgresMajorVersion: "16"
+
+services:
+  # --- Redis (used for pub/sub between the pollers and the WS gateway) ---
+  - type: redis
+    name: matchthread-redis
+    plan: starter
+    ipAllowList: [] # only reachable from other services in this Render project
+
+  # --- Main web app: Next.js pages, API routes, Auth.js ---
+  - type: web
+    name: matchthread-web
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase: { name: matchthread-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: matchthread-redis, type: redis, property: connectionString }
+      - key: AUTH_SECRET
+        sync: false # same value must also be set on matchthread-ws — see DEPLOY.md
+      - key: NEXTAUTH_URL
+        sync: false # e.g. https://matchthread-web.onrender.com, or your custom domain
+      - key: NEXT_PUBLIC_WS_URL
+        sync: false # e.g. wss://matchthread-ws.onrender.com — set AFTER the ws service is up
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: FETCHLAYER_API_KEY
+        sync: false
+
+  # --- WebSocket gateway: standalone process, needs its own public port ---
+  - type: web
+    name: matchthread-ws
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run ws-server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        fromService: { name: matchthread-redis, type: redis, property: connectionString }
+      - key: AUTH_SECRET
+        sync: false # must match matchthread-web's AUTH_SECRET exactly — it verifies the same session JWT
+
+  # --- Background worker: polls ESPN during computed match windows ---
+  - type: worker
+    name: matchthread-espn-poller
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npx prisma generate
+    startCommand: npm run worker:espn-live-poller
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase: { name: matchthread-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: matchthread-redis, type: redis, property: connectionString }
+
+  # --- Background worker: searches/attaches Reddit clips ---
+  - type: worker
+    name: matchthread-reddit-poller
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npx prisma generate
+    startCommand: npm run worker:reddit-clip-poller
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase: { name: matchthread-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { name: matchthread-redis, type: redis, property: connectionString }
+      - key: FETCHLAYER_API_KEY
+        sync: false
