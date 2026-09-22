@@ -124,4 +124,30 @@ describe("parseGoalClipTitle (real r/soccer examples)", () => {
       minute: 44,
     });
   });
+
+  it("still parses a real post that omits the minute entirely, with minute: null", () => {
+    // Confirmed against a real permalink (r/soccer/comments/1wll4fp) — not a
+    // parsing failure on our end, some posters just don't include it.
+    // lib/matching/verify-goals.ts#verifyGoals has a scorer-only fallback
+    // specifically for this case.
+    const result = parseGoalClipTitle("Atleti 2 - [1] Real Madrid -  Toni Rudiger");
+    expect(result).toEqual({
+      homeTeamText: "Atleti",
+      awayTeamText: "Real Madrid",
+      homeScore: 2,
+      awayScore: 1,
+      scoringSide: "away",
+      playerName: "Toni Rudiger",
+      minute: null,
+      extraMinute: null,
+      isPenalty: false,
+      isOwnGoal: false,
+    });
+  });
+
+  it("strips '(penalty)' down to nothing, not an empty '()'", () => {
+    const result = parseGoalClipTitle("Atletico Madrid [1] - 0 Real Madrid - Alex Grimaldo (penalty) 53' +Dean Huijsen red card");
+    expect(result?.playerName).toBe("Alex Grimaldo");
+    expect(result?.isPenalty).toBe(true);
+  });
 });

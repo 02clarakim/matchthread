@@ -1,11 +1,4 @@
 import type { ApiHighlight } from "@/lib/types/api";
-import { Badge } from "@/components/ui/badge";
-
-const METHOD_LABEL: Record<ApiHighlight["matchingMethod"], string> = {
-  DETERMINISTIC: "exact match",
-  FUZZY: "similarity match",
-  SEMANTIC: "AI match",
-};
 
 function isRedditEmbed(url: string | null): boolean {
   return Boolean(url && url.includes("redditmedia.com") && url.includes("embed=true"));
@@ -115,14 +108,9 @@ function HighlightMedia({ highlight }: { highlight: ApiHighlight }) {
 export function HighlightCard({ highlight, rank }: { highlight: ApiHighlight; rank: number }) {
   return (
     <div className="rounded-lg border border-border bg-surface-2 p-3">
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-xs font-medium text-accent">
-          {rank === 0 ? "🔥 Best reaction" : "💬 Discussion"}
-        </span>
-        <Badge title={`Match score ${highlight.score.toFixed(2)}`}>
-          {METHOD_LABEL[highlight.matchingMethod]} · {Math.round(highlight.score * 100)}%
-        </Badge>
-      </div>
+      <span className="mb-1.5 block text-xs font-medium text-accent">
+        {rank === 0 ? "🔥 Best reaction" : "💬 Discussion"}
+      </span>
 
       <HighlightMedia highlight={highlight} />
 

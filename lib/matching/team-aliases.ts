@@ -17,6 +17,9 @@ export const TEAM_ALIASES: Record<string, string[]> = {
   "Tottenham Hotspur": ["Tottenham Hotspur", "Tottenham", "Spurs", "TOT"],
   Barcelona: ["Barcelona", "Barca", "Barça", "FCB"],
   "Real Madrid": ["Real Madrid", "Madrid", "Los Blancos", "RMA"],
+  // "Atleti" isn't a nice-to-have here — confirmed against a real r/soccer
+  // post ("Atleti 2 - [1] Real Madrid - Toni Rudiger") that posters use it
+  // as often as the full name; dropping it would silently miss real clips.
   "Atletico Madrid": ["Atletico Madrid", "Atleti", "ATM"],
   "Bayern Munich": ["Bayern Munich", "Bayern", "FCB", "Munich"],
   "Newcastle United": ["Newcastle United", "Newcastle", "Magpies", "NEW"],

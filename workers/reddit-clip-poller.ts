@@ -153,11 +153,34 @@ export async function runOnce(): Promise<void> {
     }
   }
 
-  // Safety net for anything that failed to resolve above (transient
-  // network error, etc.) or was left over from an interrupted previous
-  // run. Explicit OR because `clipHost: { not: "v.redd.it" }` alone
-  // silently excludes NULL rows (SQL's <> never matches NULL) — a real
-  // bug found live: it meant a never-resolved clip was never retried.
+  const { resolved, pending } = await resolvePendingClips();
+
+  logger.info("reddit_clip_poller_run_completed", {
+    matchesSearched: matches.length,
+    matchesWithClips,
+    totalAttached,
+    resolved,
+    pending,
+  });
+}
+
+/**
+ * Safety net for anything that failed to resolve right after attaching
+ * (transient network error, etc.) or was left over from an interrupted
+ * previous run. Explicit OR because `clipHost: { not: "v.redd.it" }` alone
+ * silently excludes NULL rows (SQL's <> never matches NULL) — a real bug
+ * found live: it meant a never-resolved clip was never retried.
+ *
+ * Deliberately NOT gated behind today's match window (unlike runOnce/the
+ * FetchLayer search above) — this is a plain fetch with no API key and no
+ * per-request cost, so there's no reason to make a stuck clip wait for the
+ * next match day. Confirmed live: a Sevilla v Barcelona clip that failed to
+ * resolve once sat broken in the UI for two days because the only place
+ * that retried it was inside runOnce(), which only ran when a match was on
+ * *today* — with no fixtures that day, the poller logged
+ * "idle_no_fixtures_today" forever and never got another chance to retry it.
+ */
+export async function resolvePendingClips(): Promise<{ resolved: number; pending: number }> {
   const pending = await prisma.socialPost.findMany({
     where: { source: "REDDIT", videoUrl: null, OR: [{ clipHost: null }, { clipHost: { not: "v.redd.it" } }] },
     select: { id: true },
@@ -168,14 +191,7 @@ export async function runOnce(): Promise<void> {
     if (outcome !== "stuck") resolved += 1;
     await sleep(80);
   }
-
-  logger.info("reddit_clip_poller_run_completed", {
-    matchesSearched: matches.length,
-    matchesWithClips,
-    totalAttached,
-    resolved,
-    pending: pending.length,
-  });
+  return { resolved, pending: pending.length };
 }
 
 type Window = Awaited<ReturnType<typeof computeTodaysWindow>>;
@@ -222,8 +238,15 @@ async function startPolling(): Promise<void> {
       if (shouldRunNow(currentWindow, now, lastRunAt, POLL_INTERVAL_MS)) {
         lastRunAt = now; // set before running: a failed run shouldn't retry-loop before the next interval is actually due
         await runOnce();
-      } else if (!currentWindow) {
-        logger.info("reddit_clip_poller_idle_no_fixtures_today");
+      } else {
+        if (!currentWindow) logger.info("reddit_clip_poller_idle_no_fixtures_today");
+        // Runs every idle tick regardless of the match window — see
+        // resolvePendingClips's doc comment for why this can't wait for a
+        // fixture to exist today.
+        const { resolved, pending } = await resolvePendingClips();
+        if (resolved > 0 || pending > 0) {
+          logger.info("reddit_clip_poller_idle_resolve_pass", { resolved, pending });
+        }
       }
     } catch (err) {
       logger.error("reddit_clip_poller_cycle_failed", { error: String(err) });

@@ -93,14 +93,18 @@ body {
   }
 }
 
-/* Slow decorative drift for the glow behind the landing-page hero. */
+/* Slow decorative drift for the glow behind the landing-page hero. Stays
+   centered on itself (always -50%/-50%) and only breathes in scale — a
+   radial gradient that fades to transparent well inside its own box, so
+   there's no hard edge to clip regardless of how the section around it is
+   sized (see the hero glow's own comment in app/page.tsx). */
 @keyframes drift {
   0%,
   100% {
-    transform: translate(-50%, -33%) scale(1);
+    transform: translate(-50%, -50%) scale(1);
   }
   50% {
-    transform: translate(-48%, -36%) scale(1.08);
+    transform: translate(-50%, -50%) scale(1.1);
   }
 }
 
