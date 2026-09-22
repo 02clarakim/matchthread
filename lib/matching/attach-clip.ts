@@ -15,7 +15,7 @@ export async function attachClip(
   eventId: string,
   clip: ClipInput,
   media?: { url: string; host: string }
-): Promise<void> {
+): Promise<string> {
   const embedUrl = `https://www.redditmedia.com${clip.permalink}?ref_source=embed&ref=share&embed=true`;
   // Native Reddit video embeds inline; an external clip host (streamin.link,
   // streamff, …) can't be framed cleanly, so record its direct URL and the
@@ -48,12 +48,15 @@ export async function attachClip(
     create: { eventId, socialPostId: socialPost.id, score: 1, matchingMethod: "DETERMINISTIC" },
     update: {},
   });
+  return socialPost.id;
 }
 
 export interface VerifyAndAttachResult {
   attached: number;
   verified: boolean;
   discrepancy: string | null;
+  /** SocialPost ids just written — the caller (workers/reddit-clip-poller.ts) resolves these to a playable video immediately, rather than leaving a window where an external clip looks unresolved and falls back to a broken native-Reddit iframe. */
+  attachedPostIds: string[];
 }
 
 /**
@@ -73,13 +76,15 @@ export async function verifyAndAttachClips(
 ): Promise<VerifyAndAttachResult> {
   const result = verifyGoals(espnGoals, matchClips);
   let attached = 0;
+  const attachedPostIds: string[] = [];
   for (const gv of result.goals) {
     const attachable = gv.status === "verified" || (gv.status === "clip-mismatch" && opts.force);
     if (!attachable || !gv.clip) continue;
     const eventId = goalEventIdByExternalId.get(goalExternalId(espnEventId, gv.espn));
     if (!eventId) continue;
     for (const clip of [gv.clip, ...gv.extraClips]) {
-      await attachClip(matchId, eventId, clip, clipMedia[clip.postId]);
+      const postId = await attachClip(matchId, eventId, clip, clipMedia[clip.postId]);
+      attachedPostIds.push(postId);
       attached += 1;
     }
   }
@@ -87,5 +92,6 @@ export async function verifyAndAttachClips(
     attached,
     verified: result.verified,
     discrepancy: result.verified ? null : (result.discrepancies[0] ?? "discrepancy"),
+    attachedPostIds,
   };
 }

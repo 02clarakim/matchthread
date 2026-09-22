@@ -11,8 +11,10 @@ export function MatchCard({ match }: { match: ApiMatch }) {
   return (
     <Link href={`/matches/${match.slug ?? match.id}`}>
       <Card className="p-3 hover:border-accent/50 transition-colors">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-muted truncate">{match.league.name}</span>
+        <div className="flex items-center justify-between mb-2 gap-2">
+          <span className="text-xs text-muted truncate">
+            {match.league.name} · {kickoffDateLabel(match.kickoffAt)}
+          </span>
           <StatusIndicator status={match.status} minute={match.minute} />
         </div>
 
@@ -37,11 +39,7 @@ export function MatchCard({ match }: { match: ApiMatch }) {
           </div>
         </div>
 
-        {!hasScore && (
-          <div className="mt-2 text-xs text-muted">
-            {kickoffDateLabel(match.kickoffAt)} · {kickoffTimeLabel(match.kickoffAt)}
-          </div>
-        )}
+        {!hasScore && <div className="mt-2 text-xs text-muted">{kickoffTimeLabel(match.kickoffAt)}</div>}
       </Card>
     </Link>
   );

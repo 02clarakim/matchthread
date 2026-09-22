@@ -39,8 +39,10 @@ export function ScoreHeader({ match, homeGoals = [], awayGoals = [] }: ScoreHead
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6">
-      <div className="flex items-center justify-between text-xs text-muted mb-4">
-        <span>{match.league.name}</span>
+      <div className="flex items-center justify-between text-xs text-muted mb-4 gap-2">
+        <span className="truncate">
+          {match.league.name} · {kickoffDateLabel(match.kickoffAt)}
+        </span>
         <StatusIndicator status={match.status} minute={match.minute} />
       </div>
 
@@ -53,10 +55,7 @@ export function ScoreHeader({ match, homeGoals = [], awayGoals = [] }: ScoreHead
               {match.homeScore} – {match.awayScore}
             </div>
           ) : (
-            <div className="text-lg text-muted">
-              {kickoffTimeLabel(match.kickoffAt)}
-              <div className="text-xs">{kickoffDateLabel(match.kickoffAt)}</div>
-            </div>
+            <div className="text-lg text-muted">{kickoffTimeLabel(match.kickoffAt)}</div>
           )}
           {match.venue && <div className="mt-1 text-xs text-muted">{match.venue}</div>}
         </div>

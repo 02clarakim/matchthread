@@ -52,8 +52,19 @@ export function kickoffTimeLabel(kickoffAt: string | Date): string {
   return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Same calendar day in the viewer's local timezone, not a raw 24h difference. */
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** "Today" / "Yesterday" for a nearby date, else "Wed, Sep 16". */
 export function kickoffDateLabel(kickoffAt: string | Date): string {
   const date = typeof kickoffAt === "string" ? new Date(kickoffAt) : kickoffAt;
+  const now = new Date();
+  if (isSameLocalDay(date, now)) return "Today";
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameLocalDay(date, yesterday)) return "Yesterday";
   return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 

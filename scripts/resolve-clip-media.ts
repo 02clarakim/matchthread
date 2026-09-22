@@ -31,8 +31,16 @@ async function main() {
   const limit = Number(arg("limit") ?? "300");
   const all = arg("all") === "true";
 
+  // clipHost: { not: "v.redd.it" } alone silently excludes NULL rows (SQL's
+  // <> never matches NULL) — a real bug found live: it meant a clip that
+  // was never resolved at all (clipHost still null) was never picked up
+  // here either. The explicit `OR` includes both "never attempted" and
+  // "attempted, resolved to something other than native".
   const posts = await prisma.socialPost.findMany({
-    where: { source: "REDDIT", ...(all ? {} : { videoUrl: null, clipHost: { not: "v.redd.it" } }) },
+    where: {
+      source: "REDDIT",
+      ...(all ? {} : { videoUrl: null, OR: [{ clipHost: null }, { clipHost: { not: "v.redd.it" } }] }),
+    },
     select: { id: true, title: true },
     take: limit,
   });
