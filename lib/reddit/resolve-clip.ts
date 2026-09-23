@@ -57,6 +57,33 @@ export async function resolveClip(clipUrl: string): Promise<ResolvedClip | null>
     if (id) return { videoUrl: `https://cdn.hostedhost.top/${id}.mp4`, posterUrl: null };
   }
 
+  // streama.in (redirects to streamain.com): the watch page has no
+  // og:video at all, and a plain .mp4 search in its HTML finds a
+  // *different*, unrelated clip from a "you might also like" sidebar
+  // card — confirmed live, that's a real trap, not just a missing tag.
+  // The actual player lives in a nested iframe at /embed/{id} with a
+  // `<video data-link="...">` attribute holding the real file.
+  if (/streama\.?in/i.test(clipUrl) || /streamain\.com/i.test(finalUrl)) {
+    const clipId =
+      clipUrl.match(/streama\.?in\/(?:en\/)?([A-Za-z0-9]+)\/watch/i)?.[1] ??
+      finalUrl.match(/streamain\.com\/(?:en\/)?([A-Za-z0-9]+)\/watch/i)?.[1];
+    if (clipId) {
+      try {
+        const embedRes = await fetch(`https://streamain.com/embed/${clipId}`, { headers: { "user-agent": UA } });
+        if (embedRes.ok) {
+          const embedHtml = await embedRes.text();
+          const dataLink = clean(embedHtml.match(/data-link=['"]([^'"]+\.mp4[^'"]*)['"]/i)?.[1] ?? null);
+          if (dataLink) {
+            return { videoUrl: dataLink, posterUrl: clean(metaContent(html, "og:image")) };
+          }
+        }
+      } catch {
+        // fall through to the generic path below, which won't find
+        // anything for this host either, but shouldn't throw either way
+      }
+    }
+  }
+
   // streamin family + generic: trust og:video / <source>.
   const og =
     clean(metaContent(html, "og:video:secure_url")) ??
