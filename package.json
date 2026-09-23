@@ -16,6 +16,8 @@
     "db:studio": "prisma studio",
     "seed": "tsx scripts/seed.ts",
     "backfill": "tsx scripts/backfill.ts",
+    "fill-missing-events": "tsx scripts/fill-missing-events.ts",
+    "sync-clips-from-local": "tsx scripts/sync-clips-from-local.ts",
     "backfill:logos": "tsx scripts/backfill-team-logos.ts",
     "resolve-clips": "tsx scripts/resolve-clip-media.ts",
     "dedupe-events": "tsx scripts/dedupe-events.ts",
