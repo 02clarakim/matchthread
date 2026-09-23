@@ -81,11 +81,35 @@ function surname(name: string | null): string {
   return tokens[tokens.length - 1] ?? "";
 }
 
+/** Every significant (length > 1) normalized token in a name, as a set — order-independent. */
+function nameTokenSet(name: string | null): Set<string> {
+  if (!name) return new Set();
+  return new Set(normalizeText(name).split(/\s+/).filter((t) => t.length > 1));
+}
+
+/** True when two token sets contain exactly the same elements (ignoring order). */
+function sameTokenSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size === 0 || a.size !== b.size) return false;
+  for (const t of a) if (!b.has(t)) return false;
+  return true;
+}
+
 function sameScorer(a: string | null, b: string | null): boolean {
   const sa = surname(a);
   const sb = surname(b);
-  if (!sa || !sb) return false;
-  return sa === sb || sa.includes(sb) || sb.includes(sa);
+  if (sa && sb && (sa === sb || sa.includes(sb) || sb.includes(sa))) return true;
+  // Fallback for a name ESPN stores family-name-first (the Korean/East
+  // Asian convention) when a real Reddit title uses the Western given-
+  // name-first order instead — confirmed live: ESPN has "Lee Kang-In" for
+  // Atletico Madrid's second goal against Osasuna, but the real post is
+  // "Atletico Madrid [2]-0 Osasuna - Kang-in Lee 54'". Taking the LAST
+  // token as "the surname" picks the wrong fragment on whichever side is
+  // reversed — "in" instead of "lee" — so no ordering-dependent heuristic
+  // can get both right at once. Instead, accept an exact match of the
+  // *full set* of name tokens regardless of order — deliberately not just
+  // "any shared token", which would risk matching two different players
+  // who happen to share one name part (e.g. two different "Kane"s).
+  return sameTokenSet(nameTokenSet(a), nameTokenSet(b));
 }
 
 function minuteOf(g: { minute: number; extraMinute: number | null }): number {

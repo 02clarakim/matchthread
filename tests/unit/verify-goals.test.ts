@@ -164,4 +164,22 @@ describe("verifyGoals", () => {
     expect(result.goals[0].status).toBe("clip-missing");
     expect(result.orphanClips.map((c) => c.postId)).toEqual(["x"]);
   });
+
+  // Real bug, confirmed live: ESPN stores this player family-name-first
+  // ("Lee Kang-In", the Korean convention), but the real r/soccer post
+  // (r/soccer/comments/1wi55rm) uses the Western given-name-first order
+  // ("Kang-in Lee") — a plain "last token = surname" comparison picks the
+  // wrong fragment on ESPN's side ("in" instead of "lee"), so the two
+  // never matched despite being the correct goal.
+  it("matches a scorer name ESPN stores family-name-first against a real post using the Western order", () => {
+    const espnGoals = [
+      { minute: 54, extraMinute: null, scorer: "Lee Kang-In", assist: null, teamEspnId: "1068", teamName: "Atletico Madrid", type: "GOAL" as const, sourceText: null },
+    ];
+    const clips = [clip({ postId: "1wi55rm", title: "Atletico Madrid [2]-0 Osasuna - Kang-in Lee 54'" })];
+
+    const result = verifyGoals(espnGoals, clips);
+
+    expect(result.goals[0].status).toBe("verified");
+    expect(result.goals[0].clip?.postId).toBe("1wi55rm");
+  });
 });
