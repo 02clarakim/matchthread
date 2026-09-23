@@ -506,14 +506,39 @@ async function seedUsers() {
   });
 }
 
+/**
+ * The 5 hand-built matches below (seedArsenalVsChelsea, etc.) exist so
+ * `npm run seed` alone gives a local dev environment something to look at
+ * immediately — including one hardcoded LIVE match — without needing a
+ * real match to actually be live or `scripts/backfill.ts` to have run
+ * yet. They're synthetic: their status/minute is whatever was hardcoded
+ * at seed time and never advances on its own (nothing polls them, since
+ * they're not real ESPN fixtures), so a match seeded as LIVE stays LIVE
+ * forever — confirmed live in production: two fake matches sat "live"
+ * indefinitely after a real backfill had already populated genuine
+ * matches, which is actively misleading once real data exists alongside
+ * them. `--skip-demo-matches` (or SEED_SKIP_DEMO_MATCHES=true) skips
+ * just these 5 — use it whenever seeding a database that also gets real
+ * backfilled data, i.e. production. Local dev without backfill still
+ * wants them, so this isn't the default.
+ */
+function shouldSkipDemoMatches(): boolean {
+  return process.argv.includes("--skip-demo-matches") || process.env.SEED_SKIP_DEMO_MATCHES === "true";
+}
+
 async function main() {
   logger.info("seed_started", {});
+  const skipDemoMatches = shouldSkipDemoMatches();
 
-  await seedArsenalVsChelsea();
-  await seedManCityVsNewcastle();
-  await seedLiverpoolVsManUtd();
-  await seedSevillaVsAtleticoMadrid();
-  await seedBayernVsDortmund();
+  if (skipDemoMatches) {
+    logger.info("seed_demo_matches_skipped", {});
+  } else {
+    await seedArsenalVsChelsea();
+    await seedManCityVsNewcastle();
+    await seedLiverpoolVsManUtd();
+    await seedSevillaVsAtleticoMadrid();
+    await seedBayernVsDortmund();
+  }
   await seedFullLeagueRosters();
   await seedUsers();
 

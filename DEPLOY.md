@@ -90,15 +90,21 @@ against a real database; `dev` can prompt to reset it.
 
 Then decide what the database should actually contain on launch:
 
-- `npm run seed` — the demo dataset (`demo@example.com`, a few hand-built
-  matches). Needed for the "Try the demo" button to have something to
-  show and for its favorites to reset to a sane default on login.
+- `npm run seed -- --skip-demo-matches` — the demo account
+  (`demo@example.com`) and full team rosters, **without** the 5
+  hand-built demo matches `npm run seed` normally also creates. Those 5
+  are synthetic (one is hardcoded LIVE forever, since nothing real backs
+  it to ever mark it finished) — harmless for local dev with no real
+  data yet, actively misleading in production once real matches exist
+  alongside them. Confirmed live: two fake matches sat permanently
+  "live" after a real backfill had already run. **Always use
+  `--skip-demo-matches` against a database that also gets backfilled.**
 - `npm run backfill -- --leagues=eng.1,esp.1,ger.1 --clips` — pulls the
   real current season from ESPN, attaches any Reddit clips already
   covered by the static snapshots in `data/reddit-clips/`. This is what
-  makes the app look genuinely live rather than just seeded.
-- Realistically: run both, in that order. Both are idempotent — safe to
-  re-run.
+  makes the app look genuinely live.
+- Run both, in that order. Both are idempotent — safe to re-run (the
+  seed flag makes it safe to re-run too, now).
 
 ## 5. Verify it's actually working, not just deployed
 

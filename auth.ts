@@ -15,6 +15,12 @@ import { resetDemoFavorites } from "./lib/demo-account-server";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  // Auth.js verifies the request's Host header against a trusted list
+  // before doing anything else — auto-trusted on Vercel (it sets its own
+  // marker env var), but Render (and most other hosts) need this
+  // explicit, or every auth route can 500 with a generic "server
+  // configuration" error before even reaching a provider.
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {
