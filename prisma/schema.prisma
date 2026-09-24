@@ -113,6 +113,18 @@ model Match {
   lastSyncedAt DateTime?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+  /**
+   * Failed FetchLayer catch-up-sweep attempts to find a Reddit clip for this
+   * match (workers/reddit-clip-poller.ts#runCatchUpSweep). Confirmed live:
+   * without a cap, a match r/soccer structurally never covers (a lower-table
+   * La Liga/Bundesliga fixture, say) gets re-searched every single day for
+   * up to CATCH_UP_LOOKBACK_DAYS with zero chance of ever succeeding — 52
+   * such matches in production alone, burning ~50-100 credits/day on
+   * searches that have already failed. Once this hits CATCH_UP_MAX_ATTEMPTS,
+   * the sweep stops retrying that match. Not touched by same-day runOnce()
+   * polling, which is cheap and bounded to one match day already.
+   */
+  clipSearchAttempts Int @default(0)
 
   league   League @relation(fields: [leagueId], references: [id])
   homeTeam Team   @relation("HomeTeam", fields: [homeTeamId], references: [id])

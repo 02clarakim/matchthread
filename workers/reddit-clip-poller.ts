@@ -205,10 +205,21 @@ export async function runOnce(): Promise<void> {
 // existing backlog clears.
 const CATCH_UP_LOOKBACK_DAYS = Number(process.env.REDDIT_CLIP_CATCHUP_LOOKBACK_DAYS ?? 90);
 
+// Confirmed live against production: 52 finished matches (mostly smaller
+// La Liga/Bundesliga clubs r/soccer structurally doesn't cover) had zero
+// chance of ever getting a clip, yet were being re-searched by this sweep
+// every single day — 50-100 FetchLayer credits/day spent on searches that
+// had already failed repeatedly. This many attempts, spread over this many
+// days, is plenty of chances for a genuinely late-posted clip to surface;
+// past it, the match is treated as a permanent miss rather than retried
+// for the rest of its 90-day lookback window.
+const CATCH_UP_MAX_ATTEMPTS = Number(process.env.REDDIT_CLIP_CATCHUP_MAX_ATTEMPTS ?? 5);
+
 /**
  * Every real goal from the last N days that still has zero attached Reddit
  * posts at all — not just "unresolved" (resolvePendingClips's job), never
- * searched for in the first place.
+ * searched for in the first place — and hasn't already exhausted its
+ * catch-up attempts (see CATCH_UP_MAX_ATTEMPTS).
  *
  * runOnce()'s same-day search is a one-shot window: once today closes, a
  * match that missed it (a transient FetchLayer error, a post that wasn't
@@ -222,7 +233,7 @@ const CATCH_UP_LOOKBACK_DAYS = Number(process.env.REDDIT_CLIP_CATCHUP_LOOKBACK_D
  * recent scoreless-on-clips matches, so a gap like that closes itself
  * within a day instead of needing to be found and reported one at a time.
  */
-async function matchesMissingClips(lookbackDays: number) {
+async function matchesMissingClips(lookbackDays: number, maxAttempts: number) {
   const since = new Date(Date.now() - lookbackDays * 86_400_000);
   return prisma.match.findMany({
     where: {
@@ -231,6 +242,7 @@ async function matchesMissingClips(lookbackDays: number) {
       kickoffAt: { gte: since },
       events: { some: { type: { in: GOAL_EVENT_TYPES } } },
       socialPosts: { none: {} },
+      clipSearchAttempts: { lt: maxAttempts },
     },
     include: { homeTeam: true, awayTeam: true, league: true },
   });
@@ -239,16 +251,33 @@ async function matchesMissingClips(lookbackDays: number) {
 export async function runCatchUpSweep(): Promise<void> {
   if (!isFetchlayerConfigured()) return;
 
-  const matches = await matchesMissingClips(CATCH_UP_LOOKBACK_DAYS);
-  logger.info("reddit_clip_catchup_started", { lookbackDays: CATCH_UP_LOOKBACK_DAYS, candidates: matches.length });
+  const matches = await matchesMissingClips(CATCH_UP_LOOKBACK_DAYS, CATCH_UP_MAX_ATTEMPTS);
+  logger.info("reddit_clip_catchup_started", {
+    lookbackDays: CATCH_UP_LOOKBACK_DAYS,
+    maxAttempts: CATCH_UP_MAX_ATTEMPTS,
+    candidates: matches.length,
+  });
 
   let totalAttached = 0;
+  let gaveUpOn = 0;
   for (const m of matches) {
     const { attached } = await searchAndAttachClipsForMatch(m, true);
-    totalAttached += attached;
+    if (attached > 0) {
+      totalAttached += attached;
+    } else {
+      // Only count a real failed attempt — a match that got its clip just
+      // moves out of matchesMissingClips's `socialPosts: none` filter and
+      // never needs the counter at all.
+      const updated = await prisma.match.update({
+        where: { id: m.id },
+        data: { clipSearchAttempts: { increment: 1 } },
+        select: { clipSearchAttempts: true },
+      });
+      if (updated.clipSearchAttempts >= CATCH_UP_MAX_ATTEMPTS) gaveUpOn += 1;
+    }
   }
 
-  logger.info("reddit_clip_catchup_completed", { checked: matches.length, totalAttached });
+  logger.info("reddit_clip_catchup_completed", { checked: matches.length, totalAttached, gaveUpOn });
 }
 
 /**
