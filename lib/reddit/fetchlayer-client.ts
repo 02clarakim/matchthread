@@ -68,7 +68,17 @@ async function searchReddit(query: string, time: SearchTime, sort: SearchSort = 
     const res = await fetch(`${BASE}/search`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, subreddit: SUBREDDIT, sort, time, limit: 30 }),
+      // pages is pinned explicitly, deliberately — confirmed live with
+      // FetchLayer support (Sep 2026) that each *page* of a search bills as
+      // its own request, and their service was silently defaulting to 5
+      // pages/call while their own docs said the default was 1. That 5x
+      // multiplier is what actually burned a $5 top-up's 2,513 credits in a
+      // few days of otherwise-normal usage. They've since fixed their
+      // default to genuinely be 1, but pinning it here means our per-call
+      // cost can never again drift out from under us if that default ever
+      // changes again — 1 page (up to `limit` posts) is all we've ever
+      // needed; nothing downstream asks for more.
+      body: JSON.stringify({ query, subreddit: SUBREDDIT, sort, time, limit: 30, pages: 1 }),
     });
     if (!res.ok) {
       logger.warn("fetchlayer_search_failed", { status: res.status, query });

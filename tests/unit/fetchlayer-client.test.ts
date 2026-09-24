@@ -102,6 +102,11 @@ describe("searchGoalClipPosts", () => {
     expect(body).toMatchObject({ subreddit: "soccer", sort: "new", time: "day" });
     expect(body.query).not.toMatch(/flair/i);
     expect(body.query).toBe("Arsenal Chelsea");
+    // Pinned explicitly — see fetchlayer-client.ts's comment on this field.
+    // FetchLayer was silently defaulting to 5 pages/call (each page billed
+    // as its own credit) despite their own docs saying 1; this locks our
+    // real cost to 1 credit/call regardless of what they default to.
+    expect(body.pages).toBe(1);
   });
 
   it("uses a team's first known alias in the query — e.g. Atletico Madrid, not its full name twice", async () => {
